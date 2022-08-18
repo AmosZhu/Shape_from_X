@@ -12,13 +12,10 @@ from GeoUtils.Geo3D import (
     Epipolar,
     PnP,
 )
-from GeoUtils.common import (
-    make_homegenous
-)
 from GeoUtils.Geo3D import reconstruction
 from GeoUtils.Cameras.cameras import backProjection
 from GeoUtils_pytorch.Cameras.PerspectiveCamera import (
-    ParameterisePerspectiveCamera
+    PerspectiveCamera
 )
 from GeoUtils_pytorch.Geo3D import bundlAdjustment as BA
 import open3d as o3d
@@ -75,26 +72,12 @@ def image_outliers(imgpt, h, w):
     return np.any(outliers, 0)
 
 
-def shift_px_to_origin(px, w, h):
-    px_x = px[..., 0] - w / 2
-    px_y = px[..., 1] - h / 2
-
-    return np.stack([px_x, px_y], axis=-1)
-
-
-def shift_px_to_center(px, w, h):
-    px_x = px[..., 0] + w / 2
-    px_y = px[..., 1] + h / 2
-
-    return np.stack([px_x, px_y], axis=-1)
-
-
 if __name__ == '__main__':
-    noofImages = 3
+    noofImages = 4
 
     images, (Ks, Rs, ts) = datahelper.load_data(noofImages)
     # (images, _), Ks, _ = datahelper.load_data('E:/dataset/KITTI', noofImages=noofImages)
-    device = 'cpu'
+    device = 0
 
     # selected_images = range(noofImages)
     # images = images[selected_images]
@@ -131,7 +114,9 @@ if __name__ == '__main__':
 
     K = Ks[0]
     K_tensor = torch.from_numpy(K[None]).to(device).float()
-    cams = {'K': None, 'R': None, 't': None, 'P': None}
+    # cams = {'K': None, 'R': None, 't': None, 'P': None}
+
+    cams = PerspectiveCamera().to(device)
 
     for i in range(1, noofImages):
         desi = feature_list[i]['des']
@@ -200,29 +185,25 @@ if __name__ == '__main__':
         if i == 1:  # we compute only by fundamental matrix to build a start point, a more proper way is to choose the one has large baseline and most features between pairs.
             px1 = feature_list[0]['px'][idx_table[0]]
             px2 = feature_list[1]['px'][idx_table[1]]
-            px1_shift = shift_px_to_origin(px1, w, h)
-            px2_shift = shift_px_to_origin(px2, w, h)
+            F, mask = cv2.findFundamentalMat(px1, px2, cv2.FM_8POINT)  # these points are all inliers
 
-            F, mask = cv2.findFundamentalMat(px1_shift, px2_shift, cv2.FM_8POINT)  # these points are all inliers
+            E = Epipolar.E_f_F(F, K)
+            R_est, t_est, pt3D = reconstruction.PoseEstimation_f_F_K(F, px1, px2, K)
+            cams.add_f_numpy(intrinsic=K[None],
+                             rotation=np.eye(3)[None],
+                             translation=np.zeros(3)[None])
 
-            P = Epipolar.P_f_F(F)
-
-            cams['P'] = np.eye(3, 4)
-            cams['P'] = np.stack([cams['P'], P])
-
-            pt3D = reconstruction.triangulateReconstruction(pxs=np.stack([px1_shift, px2_shift]), cams=cams['P'])
-
-            # back projection test
-            img_pt_shift = backProjection(P, pt3D)
-            img_pt = shift_px_to_center(img_pt_shift, w, h)
-            plot_landmarks(images[i][None, ...], px2[None, ...], img_pt[None, ...])
-
-            scene_points_inlier = np.ones(pt3D.shape[0], dtype=np.bool)
+            cams.add_f_numpy(rotation=R_est[None],
+                             translation=t_est[None])
 
             scene_points = pt3D  # initial scene points
-            # pcd = o3d.geometry.PointCloud()
-            # pcd.points = o3d.utility.Vector3dVector(scene_points)
-            # o3d.visualization.draw_geometries([pcd])
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(scene_points)
+            cl, ind = pcd.remove_statistical_outlier(nb_neighbors=30, std_ratio=1)
+            scene_points_inlier = np.zeros(pt3D.shape[0], dtype=np.bool)
+            scene_points_inlier[ind] = True
+            # o3d.visualization.draw_geometries([cl])
+
 
         else:
             # Now we start to use PnP, don't use pairwise estimation, because the projection matrix from fundamental is not unique. The reconstruction point might be in different scale
@@ -237,48 +218,85 @@ if __name__ == '__main__':
             trunk_idx = idx_table[i, :n3Dpoints][visible_3D_mask]  # because the len(feature_table)>=len(scene_points)
             indices_i = trunk_idx[trunk_idx != -1]
             visible_px = feature_list[i]['px'][indices_i]
-            visible_px_shift = shift_px_to_origin(visible_px, w, h)
 
-            P = PnP.P_f_PnP(visible_px_shift, visible_3D_pt)  # the 3D point was reconstructed by pixel coordinate shift to origins
+            P = PnP.P_f_PnP(visible_px, visible_3D_pt)
+            R_est1, t_est1, s_est1 = PnP.Rts_f_P_K(P, K)
+            R_est, t_est, s_est = PnP.Rts_f_PnP_K(visible_px, visible_3D_pt, K)
+            # P_rect = K @ np.concatenate([R_est, t_est[..., None]], axis=-1)
 
-            # triangulate all
-            cams['P'] = np.concatenate([cams['P'], P[None, ...]])
-            pxs_shift = np.stack([shift_px_to_origin(feature_list[k]['px'][idx_table[k]], w, h) for k in range(i + 1)])
+            # let's do bundle adjustment
+            cameras = PerspectiveCamera(
+                intrinsic=torch.from_numpy(K[None]).float(),
+                rotation=torch.from_numpy(R_est[None]).float(),
+                translation=torch.from_numpy(t_est[None]).float(),
+                scale=torch.from_numpy(s_est[None]).float()
+            ).to(device)
+            cameras_new = BA.Rts_f_BA_K(cameras=cameras,
+                                        px=torch.from_numpy(visible_px[None]).float().to(device),
+                                        pc_init=torch.from_numpy(visible_3D_pt).float().to(device),
+                                        )
+            cams.add(rotation=cameras_new.R,
+                     translation=cameras_new.t,
+                     scale=cameras_new.s)
+            # R_new = cameras_new.R.detach().cpu().numpy()[0]
+            # t_new = cameras_new.t.detach().cpu().numpy()[0]
+            # s_new = cameras_new.s.detach().cpu().numpy()[0]
+            # P_new_scale = cameras_new.P.detach().cpu().numpy()[0]
+            # P_new = K @ np.concatenate([R_new, t_new[..., None]], axis=-1)
+
+            # img_pt = backProjection(P, visible_3D_pt)
+            # img = plot_landmarks(images[i][None, ...], visible_px[None, ...], img_pt[None, ...])
+            # plt.imshow(img)
+            # plt.show()
+            #
+            # img_pt = backProjection(P_rect, visible_3D_pt)
+            # img = plot_landmarks(images[i][None, ...], visible_px[None, ...], img_pt[None, ...])
+            # plt.imshow(img)
+            # plt.show()
+            #
+            # img_pt = backProjection(P_new_scale, visible_3D_pt)
+            # img = plot_landmarks(images[i][None, ...], visible_px[None, ...], img_pt[None, ...])
+            # plt.imshow(img)
+            # plt.show()
+            #
+            # cams['K'] = np.concatenate([cams['K'], K[None, ...]])
+            # cams['R'] = np.concatenate([cams['R'], R_new[None, ...]])
+            # cams['t'] = np.concatenate([cams['t'], t_new[None, ...]])
+            # cams['s'] = np.concatenate([cams['s'], s_new[None, ...]])
+            # cams['P'] = np.concatenate([cams['P'], P_new_scale[None, ...]])
+
             pxs = np.stack([feature_list[k]['px'][idx_table[k]] for k in range(i + 1)])
-
             vis_mask = vis_table[:i + 1]
-            pt3D = reconstruction.triangulateReconstruction(pxs=pxs_shift, cams=cams['P'], mask=vis_mask)
 
-            scene_points_inlier = np.ones(pt3D.shape[0], dtype=np.bool)
+            pt3D = reconstruction.triangulateReconstruction(pxs=pxs, cams=cams.P.detach().cpu().numpy(), mask=vis_mask)
 
-            # backproject to all views
-            img_pt = []
-            for k in range(i + 1):
-                img_pt_shift = backProjection(cams['P'][k], pt3D)
-                img_pt.append(shift_px_to_center(img_pt_shift, w, h))
-            img_pt = np.stack(img_pt)
-            # scene_points_inlier &= ~image_outliers(img_pt, h, w)
-            plot_landmarks(images[:i + 1], pxs[:, scene_points_inlier], img_pt[:, scene_points_inlier])
-            # cv2.imshow('epipolar constraint', img)
-            # cv2.waitKey(0)
-            # cv2.destroyAllWindows()
+            # let's do bundle adjustment
+            scene_points_inlier_BA = np.zeros(pt3D.shape[0], dtype=np.bool)
+            scene_points_inlier_BA[:n3Dpoints] = scene_points_inlier
+            cams, pt3D = BA.RtsPC_f_BA_K(cams,
+                                         px=torch.from_numpy(pxs).float().to(device),
+                                         pc_init=torch.from_numpy(pt3D).float().to(device),
+                                         px_mask=torch.from_numpy(vis_mask).to(device),
+                                         pc_mask=torch.from_numpy(scene_points_inlier_BA).to(device)
+                                         )
+            img_pt = cams.point_to_image(pt3D).detach().cpu().numpy()
+            img_inliers = ~image_outliers(img_pt, h, w)
+            _ = plot_landmarks(images[:i + 1], pxs[:, img_inliers], img_pt[:, img_inliers])
 
-            # scene_points=pt_3d
-            # scene_points=pt_3d
-            # new_scene_points = np.concatenate([scene_points])
+            pt3D = pt3D.detach().cpu().numpy()
 
-            # pcd = o3d.geometry.PointCloud()
-            # pcd.points = o3d.utility.Vector3dVector(pt3D[scene_points_inlier])
-            # o3d.visualization.draw_geometries([pcd])
+            # remove outliers
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(pt3D)
+            cl, ind = pcd.remove_statistical_outlier(nb_neighbors=30, std_ratio=1)
+            scene_points_inlier = np.zeros(pt3D.shape[0], dtype=np.bool)
+            scene_points_inlier[ind] = True
+            scene_points_inlier &= img_inliers
+
+            # plot the inliers 3D points
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(pt3D[scene_points_inlier])
+            o3d.visualization.draw_geometries([pcd])
 
             scene_points = pt3D
         pass
-
-    H = PnP.euclidian_rectify_f_P(cams['P'])
-
-    rectify_pt = make_homegenous(scene_points) @ np.linalg.pinv(H).T
-    rectify_pt = rectify_pt[..., :3] / rectify_pt[..., 3:]
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(rectify_pt[scene_points_inlier])
-    o3d.visualization.draw_geometries([pcd])
-

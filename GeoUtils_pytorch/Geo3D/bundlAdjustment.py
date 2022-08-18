@@ -18,6 +18,7 @@ from pytorch3d.transforms import (
 )
 from tqdm import tqdm
 import copy
+from pytorch3d.renderer.cameras import PerspectiveCameras
 
 
 def RtsPC_f_BA_K(cameras: BaseCamera,
@@ -64,9 +65,13 @@ def RtsPC_f_BA_K(cameras: BaseCamera,
     pc.requires_grad = True
 
     pc_final = pc_init
-    cam_final = copy.deepcopy(cameras)
-
-    cam_final.upgrade_only(unfreeze_list=['R', 't', 's'])
+    cam_final = cameras.detach()
+    s = cam_final.s.detach()
+    s.requires_grad = True
+    t = cam_final.t.detach()
+    t.requires_grad = True
+    q = matrix_to_quaternion(cam_final.R.detach())
+    q.requires_grad = True
 
     # set up the optimiser to optimise quternion and translation vector and point cloud
 
@@ -76,14 +81,16 @@ def RtsPC_f_BA_K(cameras: BaseCamera,
     p_loss = 1e8
     max_iteration = 10000
     verbose = True
-    optimiser = torch.optim.Adam(params=[pc] + list(cam_final.parameters()), lr=lr)
+    optimiser = torch.optim.Adam(params=[pc, q, t, s], lr=lr)
     n_iter = tqdm(range(max_iteration), disable=not verbose)
 
     for i, it in enumerate(n_iter):
         if bConverge: break
 
         optimiser.zero_grad()
-
+        cam_final.s = s
+        cam_final.t = t
+        cam_final.R = quaternion_to_matrix(q)
         bp_imgpt = cam_final.point_to_image(pc[None])
 
         loss = criterion(px[px_mask], bp_imgpt[px_mask])
@@ -141,8 +148,14 @@ def Rts_f_BA_K(cameras: BaseCamera,
 
     pc = pc_init[pc_mask]
 
-    cam_final = copy.deepcopy(cameras)
-    cam_final.upgrade_only(unfreeze_list=['R', 't', 's'])
+    cam_final = cameras.detach()
+    s = cam_final.s.detach()
+    s.requires_grad = True
+    t = cam_final.t.detach()
+    t.requires_grad = True
+    q = matrix_to_quaternion(cam_final.R.detach())
+    q.requires_grad = True
+    # cam_final.upgrade_only(unfreeze_list=['R', 't', 's'])
 
     # set up the optimiser to optimise quternion and translation vector and point cloud
 
@@ -151,7 +164,7 @@ def Rts_f_BA_K(cameras: BaseCamera,
     p_loss = 1e8
     max_iteration = 10000
     verbose = True
-    optimiser = torch.optim.Adam(params=cam_final.parameters(), lr=lr)
+    optimiser = torch.optim.Adam(params=[q, t, s], lr=lr)
     n_iter = tqdm(range(max_iteration), disable=not verbose)
     criterion = torch.nn.MSELoss()
 
@@ -159,6 +172,9 @@ def Rts_f_BA_K(cameras: BaseCamera,
         if bConverge: break
 
         optimiser.zero_grad()
+        cam_final.s = s
+        cam_final.t = t
+        cam_final.R = quaternion_to_matrix(q)
 
         bp_imgpt = cam_final.point_to_image(pc[None])
 

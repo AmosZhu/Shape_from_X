@@ -268,3 +268,144 @@ def t_f_PnP_K_R(pt2D, pt3D, K, R):
     t = np.linalg.lstsq(vx.reshape(N * 3, -1), b[..., None], rcond=None)[0].squeeze(-1)
 
     return t
+
+
+def __build_A_f_P2(P):
+    '''
+    Construct a matrix A that help to compute absolute dual qudaric.
+    This one assume, the principal point is at (0,0), skew 0, same focal length. So only 5 parameters to construct Q.
+    Where:  omega=P*Q*P^T => Ax=0. Where x is the vectorise form of Q. A is the refactor matrix.
+    Reference: Multiple view Geometry in Computer vision(Second edtion). 19.3. Page 464. (Table 19.1)
+    :param P: projection matrix. size=[3,4]
+    :return:
+    '''
+    A = np.zeros(shape=(4, 5), dtype=np.float32)
+    A[0, 0] = P[0, 0] ** 2 + P[0, 1] ** 2
+    A[0, 1] = 2 * P[0, 0] * P[0, 3]
+    A[0, 2] = 2 * P[0, 1] * P[0, 3]
+    A[0, 3] = 2 * P[0, 2] * P[0, 3]
+    A[0, 4] = P[0, 3] ** 2
+
+    A[1, 0] = P[0, 0] * P[1, 0] + P[0, 1] * P[1, 1]
+    A[1, 1] = P[0, 0] * P[1, 3] + P[0, 3] * P[1, 0]
+    A[1, 2] = P[0, 1] * P[1, 3] + P[0, 3] * P[1, 1]
+    A[1, 3] = P[0, 2] * P[1, 3] + P[0, 3] * P[1, 2]
+    A[1, 4] = P[0, 3] * P[1, 3]
+
+    A[2, 0] = P[0, 0] * P[2, 0] + P[0, 1] * P[2, 1]
+    A[2, 1] = P[0, 0] * P[2, 3] + P[0, 3] * P[2, 0]
+    A[2, 2] = P[0, 1] * P[2, 3] + P[0, 3] * P[2, 1]
+    A[2, 3] = P[0, 2] * P[2, 3] + P[0, 3] * P[2, 2]
+    A[2, 4] = P[0, 3] * P[2, 3]
+
+    A[3, 0] = P[1, 0] * P[1, 0] + P[1, 1] * P[1, 1]
+    A[3, 1] = P[1, 0] * P[1, 3] + P[1, 3] * P[1, 0]
+    A[3, 2] = P[1, 1] * P[1, 3] + P[1, 3] * P[1, 1]
+    A[3, 3] = P[1, 2] * P[1, 3] + P[1, 3] * P[1, 2]
+    A[3, 4] = P[1, 3] * P[1, 3]
+
+    return A
+
+
+def __build_A_f_P(P):
+    '''
+    Construct a matrix A that help to compute absolute dual qudaric.
+    Where:  omega=P*Q*P^T => Ax=b. Where x is the vectorise form of Q. A is the refactor matrix.
+    Reference: Multiple view Geometry in Computer vision(Second edtion). 19.3. Page 464. (Table 19.1)
+    :param P: projection matrix. size=[3,4]
+    :return:
+    '''
+    A = np.zeros(shape=(4, 10), dtype=np.float32)
+    A[0, 0] = P[0, 0] ** 2 - P[1, 0] ** 2
+    A[0, 1] = 2 * (P[0, 0] * P[0, 1] - P[1, 0] * P[1, 1])
+    A[0, 2] = 2 * (P[0, 0] * P[0, 2] - P[1, 0] * P[1, 2])
+    A[0, 3] = 2 * (P[0, 0] * P[0, 3] - P[1, 0] * P[1, 3])
+    A[0, 4] = P[0, 1] ** 2 - P[1, 1] ** 2
+    A[0, 5] = 2 * (P[0, 1] * P[0, 2] - P[1, 1] * P[1, 2])
+    A[0, 6] = 2 * (P[0, 1] * P[0, 3] - P[1, 1] * P[1, 3])
+    A[0, 7] = P[0, 2] ** 2 - P[1, 2] ** 2
+    A[0, 8] = 2 * (P[0, 2] * P[0, 3] - P[1, 2] * P[1, 3])
+    A[0, 9] = P[0, 3] ** 2 - P[1, 3] ** 2
+
+    A[1, 0] = P[0, 0] * P[1, 0]
+    A[1, 1] = P[0, 0] * P[1, 1] + P[0, 1] * P[1, 0]
+    A[1, 2] = P[0, 0] * P[1, 2] + P[0, 2] * P[1, 0]
+    A[1, 3] = P[0, 0] * P[1, 3] + P[0, 3] * P[1, 0]
+    A[1, 4] = P[0, 1] * P[1, 1]
+    A[1, 5] = P[0, 1] * P[1, 2] + P[0, 2] * P[1, 1]
+    A[1, 6] = P[0, 1] * P[1, 3] + P[0, 3] * P[1, 1]
+    A[1, 7] = P[0, 2] * P[1, 2]
+    A[1, 8] = P[0, 2] * P[1, 3] + P[0, 3] * P[1, 2]
+    A[1, 9] = P[0, 3] * P[1, 3]
+
+    A[2, 0] = P[0, 0] * P[2, 0]
+    A[2, 1] = P[0, 0] * P[2, 1] + P[0, 1] * P[2, 0]
+    A[2, 2] = P[0, 0] * P[2, 2] + P[0, 2] * P[2, 0]
+    A[2, 3] = P[0, 0] * P[2, 3] + P[0, 3] * P[2, 0]
+    A[2, 4] = P[0, 1] * P[2, 1]
+    A[2, 5] = P[0, 1] * P[2, 2] + P[0, 2] * P[2, 1]
+    A[2, 6] = P[0, 1] * P[2, 3] + P[0, 3] * P[2, 1]
+    A[2, 7] = P[0, 2] * P[2, 2]
+    A[2, 8] = P[0, 2] * P[2, 3] + P[0, 3] * P[2, 2]
+    A[2, 9] = P[0, 3] * P[2, 3]
+
+    A[3, 0] = P[1, 0] * P[2, 0]
+    A[3, 1] = P[1, 0] * P[2, 1] + P[1, 1] * P[2, 0]
+    A[3, 2] = P[1, 0] * P[2, 2] + P[1, 2] * P[2, 0]
+    A[3, 3] = P[1, 0] * P[2, 3] + P[1, 3] * P[2, 0]
+    A[3, 4] = P[1, 1] * P[2, 1]
+    A[3, 5] = P[1, 1] * P[2, 2] + P[1, 2] * P[2, 1]
+    A[3, 6] = P[1, 1] * P[2, 3] + P[1, 3] * P[2, 1]
+    A[3, 7] = P[1, 2] * P[2, 2]
+    A[3, 8] = P[1, 2] * P[2, 3] + P[1, 3] * P[2, 2]
+    A[3, 9] = P[1, 3] * P[2, 3]
+
+    return A
+
+
+def euclidian_rectify_f_P(P):
+    '''
+    Compute Absolute dual quadirc from Projection matrices.
+    Reference: Multiple view Geometry in Computer vision(Second edtion). 19.3. Page 464
+    :param P: A set of projection matrices. size=[N, 3 ,4]
+    :return:
+    '''
+    assert np.ndim(P) == 3, 'Projection matrix size must be [N,3,4]'
+    A = []
+    for i in range(1, P.shape[0]):
+        A.append(__build_A_f_P2(P[i]))
+
+    A = np.concatenate(A)
+
+    U, D, Vh = np.linalg.svd(A)
+    q = Vh.conj().T[..., -1]
+    q = q / q[-1]
+    Q = np.array([[q[0], 0, 0, q[1]],
+                  [0, q[0], 0, q[2]],
+                  [0, 0, 1, q[3]],
+                  [q[1], q[2], q[3], q[4]]])
+
+    if np.linalg.det(Q) < 0:
+        Q = -Q
+
+    omegas = []
+    for i in range(P.shape[0]):
+        omegas.append(P[i] @ Q @ P[i].T)
+        # if np.linalg.det(omega) < 0:
+        #     omega = -omega
+        # K = np.linalg.cholesky(omega)
+        # Ks.append(K)
+
+    omegas = np.stack(omegas)
+
+    f = np.sqrt(Q[0, 0])
+    a = Q[0, 3] / f
+    b = Q[1, 3] / f
+    c = Q[2, 3]
+
+    H = np.array([[f, 0, 0, 0],
+                  [0, f, 0, 0],
+                  [0, 0, 1, 0],
+                  [a, b, c, 1]])
+
+    return H

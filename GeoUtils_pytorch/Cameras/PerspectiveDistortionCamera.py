@@ -10,11 +10,17 @@ from GeoUtils_pytorch.common import (
 )
 from tqdm import tqdm
 from .PerspectiveCamera import PerspectiveCamera
+from typing import Union
 
 
 class PerspectiveDistortionCamera(PerspectiveCamera):
-    def __init__(self, intrinsic: torch.Tensor, rotation: torch.Tensor = None, translation: torch.Tensor = None, radial_distortion: torch.Tensor = None,
-                 tangent_distortion: torch.Tensor = None):
+    def __init__(self, intrinsic: torch.Tensor,
+                 rotation: torch.Tensor = None,
+                 translation: torch.Tensor = None,
+                 scale: torch.Tensor = None,
+                 radial_distortion: torch.Tensor = None,
+                 tangent_distortion: torch.Tensor = None,
+                 device: Union[str, torch.device] = 'cpu'):
         """
         :param Intrinsic: size=[batch,3,3]
         :param Rotation: size=[batch,3,3]
@@ -23,51 +29,55 @@ class PerspectiveDistortionCamera(PerspectiveCamera):
         :param tangent_distortion: size=[batch,2]
         :param device: cpu or cuda
         """
-        super(PerspectiveDistortionCamera, self).__init__(intrinsic, rotation, translation)
+        super(PerspectiveDistortionCamera, self).__init__(intrinsic=intrinsic,
+                                                          rotation=rotation,
+                                                          translation=translation,
+                                                          scale=scale,
+                                                          device=device)
 
         bs = rotation.shape[0]
         if radial_distortion is not None:
-            self._radial = nn.Parameter(radial_distortion.repeat(bs, 1)) if radial_distortion.shape[0] == 1 else nn.Parameter(radial_distortion)
+            self.radial = radial_distortion.repeat(bs, 1) if radial_distortion.shape[0] == 1 else radial_distortion
         else:
-            self._radial = nn.Parameter(torch.zeros(size=(bs, 3), dtype=torch.float32))
+            self.radial = torch.zeros(size=(bs, 3), dtype=torch.float32)
 
         if tangent_distortion is not None:
-            self._tangent = nn.Parameter(tangent_distortion.repeat(bs, 1)) if tangent_distortion.shape[0] == 1 else nn.Parameter(tangent_distortion)
+            self.tangent = tangent_distortion.repeat(bs, 1) if tangent_distortion.shape[0] == 1 else tangent_distortion
         else:
-            self._tangent = nn.Parameter(torch.zeros(size=(bs, 2), dtype=torch.float32))
+            self.tangent = torch.zeros(size=(bs, 2), dtype=torch.float32)
 
-    @property
-    def radial(self):
-        return self._radial
+    # @property
+    # def radial(self):
+    #     return self._radial
+    #
+    # @radial.setter
+    # def radial(self, raial_distortion):
+    #     self._radial = nn.Parameter(raial_distortion).to(self._radial.device)
+    #
+    # @property
+    # def tangent(self):
+    #     return self._tangent
+    #
+    # @tangent.setter
+    # def tangent(self, tangent_distortion):
+    #     self._tangent = nn.Parameter(tangent_distortion).to(self._tangent.device)
 
-    @radial.setter
-    def radial(self, raial_distortion):
-        self._radial = nn.Parameter(raial_distortion).to(self._radial.device)
-
-    @property
-    def tangent(self):
-        return self._tangent
-
-    @tangent.setter
-    def tangent(self, tangent_distortion):
-        self._tangent = nn.Parameter(tangent_distortion).to(self._tangent.device)
-
-    def freeze(self, freeze_list=['']):
-        super().freeze(freeze_list)
-
-        if 'radial' in freeze_list:
-            self._radial.requires_grad_(False)
-
-        if 'tagent' in freeze_list:
-            self._tangent.requires_grad_(False)
-
-    def upgrade_only(self, unfreeze_list=['']):
-        super().upgrade_only(unfreeze_list)
-        if 'radial' not in unfreeze_list:
-            self._radial.requires_grad_(False)
-
-        if 'tagent' not in unfreeze_list:
-            self._tangent.requires_grad_(False)
+    # def freeze(self, freeze_list=['']):
+    #     super().freeze(freeze_list)
+    #
+    #     if 'radial' in freeze_list:
+    #         self._radial.requires_grad_(False)
+    #
+    #     if 'tagent' in freeze_list:
+    #         self._tangent.requires_grad_(False)
+    #
+    # def upgrade_only(self, unfreeze_list=['']):
+    #     super().upgrade_only(unfreeze_list)
+    #     if 'radial' not in unfreeze_list:
+    #         self._radial.requires_grad_(False)
+    #
+    #     if 'tagent' not in unfreeze_list:
+    #         self._tangent.requires_grad_(False)
 
     def point_to_image(self, V: torch.Tensor):
         """
