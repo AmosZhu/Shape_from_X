@@ -14,8 +14,9 @@ from GeoUtils.Geo3D import (
 )
 from GeoUtils.Geo3D import reconstruction
 from GeoUtils.Cameras.cameras import backProjection
-from GeoUtils_pytorch.Cameras.PerspectiveCamera import (
-    PerspectiveCamera
+from GeoUtils_pytorch.Cameras.PerspectiveCamera import PerspectiveCamera
+from GeoUtils_pytorch.Cameras.PerspectiveDistortionCamera import (
+    PerspectiveDistortionCamera
 )
 from GeoUtils_pytorch.Geo3D import bundlAdjustment as BA
 import open3d as o3d
@@ -45,8 +46,8 @@ def construct_matching_table(feature_list):
     for i in range(nView):
         nMaxFeat += len(feature_list[i]['row'])
 
-    vis_table = np.zeros(shape=(nView, nMaxFeat), dtype=np.bool)
-    idx_table = np.zeros(shape=(nView, nMaxFeat), dtype=np.int)
+    vis_table = np.zeros(shape=(nView, nMaxFeat), dtype=bool)
+    idx_table = np.zeros(shape=(nView, nMaxFeat), dtype=int)
 
     for i in range(nView):
         js = np.where(feature_list[i]['row'] != -1)[0]
@@ -77,7 +78,7 @@ if __name__ == '__main__':
 
     images, (Ks, Rs, ts) = datahelper.load_data(noofImages)
     # (images, _), Ks, _ = datahelper.load_data('E:/dataset/KITTI', noofImages=noofImages)
-    device = 0
+    device = 'cpu'
 
     # selected_images = range(noofImages)
     # images = images[selected_images]
@@ -99,7 +100,7 @@ if __name__ == '__main__':
         kp, des = SIFT.detectAndCompute(images[i], None)
         feature_list.append({'kp': kp,
                              'des': des,
-                             'px': np.array([p.pt for p in kp], dtype=np.float),
+                             'px': np.array([p.pt for p in kp], dtype=float),
                              'row': -np.ones(len(kp), dtype=np.int32)})
         # kp, des = FAST.detectAndCompute(images[i], None)
 
@@ -116,7 +117,7 @@ if __name__ == '__main__':
     K_tensor = torch.from_numpy(K[None]).to(device).float()
     # cams = {'K': None, 'R': None, 't': None, 'P': None}
 
-    cams = PerspectiveCamera().to(device)
+    cams = PerspectiveDistortionCamera().to(device)
 
     for i in range(1, noofImages):
         desi = feature_list[i]['des']
@@ -200,7 +201,7 @@ if __name__ == '__main__':
             pcd = o3d.geometry.PointCloud()
             pcd.points = o3d.utility.Vector3dVector(scene_points)
             cl, ind = pcd.remove_statistical_outlier(nb_neighbors=30, std_ratio=1)
-            scene_points_inlier = np.zeros(pt3D.shape[0], dtype=np.bool)
+            scene_points_inlier = np.zeros(pt3D.shape[0], dtype=bool)
             scene_points_inlier[ind] = True
             # o3d.visualization.draw_geometries([cl])
 
@@ -271,7 +272,7 @@ if __name__ == '__main__':
             pt3D = reconstruction.triangulateReconstruction(pxs=pxs, cams=cams.P.detach().cpu().numpy(), mask=vis_mask)
 
             # let's do bundle adjustment
-            scene_points_inlier_BA = np.zeros(pt3D.shape[0], dtype=np.bool)
+            scene_points_inlier_BA = np.zeros(pt3D.shape[0], dtype=bool)
             scene_points_inlier_BA[:n3Dpoints] = scene_points_inlier
             cams, pt3D = BA.RtsPC_f_BA_K(cams,
                                          px=torch.from_numpy(pxs).float().to(device),
@@ -289,7 +290,7 @@ if __name__ == '__main__':
             pcd = o3d.geometry.PointCloud()
             pcd.points = o3d.utility.Vector3dVector(pt3D)
             cl, ind = pcd.remove_statistical_outlier(nb_neighbors=30, std_ratio=1)
-            scene_points_inlier = np.zeros(pt3D.shape[0], dtype=np.bool)
+            scene_points_inlier = np.zeros(pt3D.shape[0], dtype=bool)
             scene_points_inlier[ind] = True
             scene_points_inlier &= img_inliers
 

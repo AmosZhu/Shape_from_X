@@ -14,7 +14,7 @@ from typing import Union
 
 
 class PerspectiveDistortionCamera(PerspectiveCamera):
-    def __init__(self, intrinsic: torch.Tensor,
+    def __init__(self, intrinsic: torch.Tensor = None,
                  rotation: torch.Tensor = None,
                  translation: torch.Tensor = None,
                  scale: torch.Tensor = None,
@@ -29,12 +29,28 @@ class PerspectiveDistortionCamera(PerspectiveCamera):
         :param tangent_distortion: size=[batch,2]
         :param device: cpu or cuda
         """
-        super(PerspectiveDistortionCamera, self).__init__(intrinsic=intrinsic,
-                                                          rotation=rotation,
-                                                          translation=translation,
-                                                          scale=scale,
-                                                          device=device)
+        super(PerspectiveCamera, self).__init__(device=device)
 
+        if intrinsic is None and \
+                rotation is None and \
+                translation is None:
+            return  # construct an empty camera
+
+        self.__init_cam__(intrinsic=intrinsic,
+                          rotation=rotation,
+                          translation=translation,
+                          scale=scale,
+                          radial_distortion=radial_distortion,
+                          tangent_distortion=tangent_distortion)
+
+    def __init_cam__(self,
+                     intrinsic: torch.Tensor,
+                     rotation: torch.Tensor = None,
+                     translation: torch.Tensor = None,
+                     scale: torch.Tensor = None,
+                     radial_distortion: torch.Tensor = None,
+                     tangent_distortion: torch.Tensor = None,
+                     ):
         bs = rotation.shape[0]
         if radial_distortion is not None:
             self.radial = radial_distortion.repeat(bs, 1) if radial_distortion.shape[0] == 1 else radial_distortion
@@ -46,38 +62,10 @@ class PerspectiveDistortionCamera(PerspectiveCamera):
         else:
             self.tangent = torch.zeros(size=(bs, 2), dtype=torch.float32)
 
-    # @property
-    # def radial(self):
-    #     return self._radial
-    #
-    # @radial.setter
-    # def radial(self, raial_distortion):
-    #     self._radial = nn.Parameter(raial_distortion).to(self._radial.device)
-    #
-    # @property
-    # def tangent(self):
-    #     return self._tangent
-    #
-    # @tangent.setter
-    # def tangent(self, tangent_distortion):
-    #     self._tangent = nn.Parameter(tangent_distortion).to(self._tangent.device)
-
-    # def freeze(self, freeze_list=['']):
-    #     super().freeze(freeze_list)
-    #
-    #     if 'radial' in freeze_list:
-    #         self._radial.requires_grad_(False)
-    #
-    #     if 'tagent' in freeze_list:
-    #         self._tangent.requires_grad_(False)
-    #
-    # def upgrade_only(self, unfreeze_list=['']):
-    #     super().upgrade_only(unfreeze_list)
-    #     if 'radial' not in unfreeze_list:
-    #         self._radial.requires_grad_(False)
-    #
-    #     if 'tagent' not in unfreeze_list:
-    #         self._tangent.requires_grad_(False)
+        super().__init_cam__(intrinsic=intrinsic,
+                             rotation=rotation,
+                             translation=translation,
+                             scale=scale)
 
     def point_to_image(self, V: torch.Tensor):
         """
@@ -166,20 +154,114 @@ class PerspectiveDistortionCamera(PerspectiveCamera):
 
         return v_img[..., :2]
 
+    def add(self,
+            rotation: torch.Tensor,
+            translation: torch.Tensor,
+            intrinsic: torch.Tensor = None,
+            scale: torch.Tensor = None,
+            radial_distortion: torch.Tensor = None,
+            tangent_distortion: torch.Tensor = None,
+            ):
+        if not hasattr(self, 'K'):
+            # construct new camera if it's an empty camera
+            self.__init_cam__(intrinsic=intrinsic,
+                              rotation=rotation,
+                              translation=translation,
+                              scale=scale,
+                              radial_distortion=radial_distortion,
+                              tangent_distortion=tangent_distortion)
+            return
+
+        super().add(intrinsic=intrinsic,
+                    rotation=rotation,
+                    translation=translation,
+                    scale=scale)
+
+        radial = self.radial[0][None, ...] if radial_distortion is None else radial_distortion
+        self.radial = torch.cat([self.radial, radial.to(self.device)])
+
+        tangent = self.radial[0][None, ...] if tangent_distortion is None else tangent_distortion
+        self.tangent = torch.cat([self.tangent, tangent.to(self.device)])
+
+    def add_f_numpy(self,
+                    rotation,
+                    translation,
+                    intrinsic=None,
+                    scale=None,
+                    radial_distortion=None,
+                    tangent_distortion=None,
+                    ):
+        nView = rotation.shape[0]
+        R = torch.from_numpy(rotation).float()
+        t = torch.from_numpy(translation).float()
+        s = torch.ones(size=(nView,), dtype=torch.float32) if scale is None else torch.from_numpy(scale).float()
+        K = self.K[0][None, ...] if intrinsic is None else torch.from_numpy(intrinsic).float()
+
+        if radial_distortion is not None:
+            radial = torch.from_numpy(radial_distortion).float()
+        else:
+            if hasattr(self, 'radia'):
+                radial = self.radial[0][None, ...]
+            else:
+                radial = torch.zeros(size=(3,), dtype=torch.float32)
+
+        if tangent_distortion is not None:
+            tangent = torch.from_numpy(radial_distortion).float()
+        else:
+            if hasattr(self, 'tangent'):
+                tangent = self.radial[0][None, ...]
+            else:
+                tangent = torch.zeros(size=(2,), dtype=torch.float32)
+
+        self.add(
+            intrinsic=K,
+            rotation=R,
+            translation=t,
+            scale=s,
+            radial_distortion=radial,
+            tangent_distortion=tangent
+        )
+
+        # if not hasattr(self, 'K'):
+        #     # construct new camera if it's an empty camera
+        #     self.__init_cam__(intrinsic=K,
+        #                       rotation=R,
+        #                       translation=t,
+        #                       scale=s,
+        #                       radial_distortion=radial,
+        #                       tangent_distortion=tangent)
+        #     return
+        #
+        # self.R = torch.cat([self.R, R.to(self.device)])
+        # self.t = torch.cat([self.t, t.to(self.device)])
+        # self.s = torch.cat([self.s, s.to(self.device)])
+        # self.K = torch.cat([self.K, K.to(self.device)])
+
     def to_dict(self):
         return {
-            'K': self.K.detach().clone(),
-            'R': self.R.detach().clone(),
-            't': self.t.detach().clone(),
+            'K': self.K.detach(),
+            'R': self.R.detach(),
+            't': self.t.detach(),
+            's': self.s.detach(),
             'radial_distortion': self.radial.clone(),
             'tangent_distortion': self.tangent.clone()
         }
+
+    def to_dict_numpy(self):
+        return {'K': self.K.detach().cpu().numpy(),
+                'R': self.R.detach().cpu().numpy(),
+                't': self.t.detach().cpu().numpy(),
+                's': self.s.detach().cpu().numpy(),
+                'radial_distortion': self.radial.cpu().numpy().tolist(),
+                'tangent_distortion': self.tangent.cpu().numpy().tolist()
+                }
 
     def to_dict_list(self):
         return {
             'K': self.K.detach().cpu().numpy().tolist(),
             'R': self.R.detach().cpu().numpy().tolist(),
             't': self.t.detach().cpu().numpy().tolist(),
+            's': self.s.detach().cpu().numpy().tolist(),
             'radial_distortion': self.radial.cpu().numpy().tolist(),
             'tangent_distortion': self.tangent.cpu().numpy().tolist()
         }

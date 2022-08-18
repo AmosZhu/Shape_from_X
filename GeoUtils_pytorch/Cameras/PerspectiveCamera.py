@@ -100,8 +100,7 @@ class PerspectiveCamera(BaseCamera):
 
         if intrinsic is None and \
                 rotation is None and \
-                translation is None and \
-                scale is None:
+                translation is None:
             return  # construct an empty camera
 
         self.__init_cam__(intrinsic=intrinsic,
@@ -230,24 +229,17 @@ class PerspectiveCamera(BaseCamera):
         s = torch.ones(size=(nView,), dtype=torch.float32) if scale is None else torch.from_numpy(scale).float()
         K = self.K[0][None, ...] if intrinsic is None else torch.from_numpy(intrinsic).float()
 
-        if not hasattr(self, 'K'):
-            # construct new camera if it's an empty camera
-            self.__init_cam__(intrinsic=K,
-                              rotation=R,
-                              translation=t,
-                              scale=s)
-            return
-
-        self.R = torch.cat([self.R, R.to(self.device)])
-        self.t = torch.cat([self.t, t.to(self.device)])
-        self.s = torch.cat([self.s, s.to(self.device)])
-        self.K = torch.cat([self.K, K.to(self.device)])
+        self.add(intrinsic=K,
+                 rotation=R,
+                 translation=t,
+                 scale=s
+                 )
 
     def to_dict(self):
-        return {'K': self.K.clone(),
-                'R': self.R.clone(),
-                't': self.t.clone(),
-                's': self.s.clone()
+        return {'K': self.K.detach(),
+                'R': self.R.detach(),
+                't': self.t.detach(),
+                's': self.s.detach()
                 }
 
     def to_dict_numpy(self):
@@ -276,104 +268,3 @@ class PerspectiveCamera(BaseCamera):
             translation=self.t[i][None, ...],
             scale=self.s[i][None, ...]
         )
-
-# class ParameterisePerspectiveCamera(PerspectiveCamera):
-#     def __init__(self,
-#                  intrinsic: torch.Tensor,
-#                  rotation: torch.Tensor = None,
-#                  translation: torch.Tensor = None,
-#                  scale: torch.Tensor = None,
-#                  device:Union[str, torch.device]='cpu'
-#                  ):
-#         """
-#         :param Intrinsic: size=[batch,3,3]
-#         :param Rotation: size=[batch,3,3]
-#         :param Translation: size=[batch,3]
-#         """
-#         super(PerspectiveCamera, self).__init__()
-#
-#         nView = intrinsic.shape[0]
-#
-#         _K = intrinsic
-#         self._fx = nn.Parameter(_K[..., 0, 0])
-#         self._fy = nn.Parameter(_K[..., 1, 1])
-#         self._x0 = nn.Parameter(_K[..., 0, 2])
-#         self._y0 = nn.Parameter(_K[..., 1, 2])
-#         self._skew = nn.Parameter(_K[..., 0, 1])
-#
-#         _R = nn.Parameter(torch.eye(3)[None, ...].repeat(nView)) if rotation is None else nn.Parameter(rotation)
-#         self._R_param = nn.Parameter(matrix_to_quaternion(_R))
-#         self._t = nn.Parameter(torch.zeros(size=(nView, 3))) if translation is None else nn.Parameter(translation)
-#         self._s = nn.Parameter(torch.ones(size=(nView,), dtype=torch.float32)) if scale is None else nn.Parameter(scale)
-#
-#     @property
-#     def K(self):
-#         _K = torch.zeros(size=(len(self), 3, 3), dtype=torch.float32).to(self._fx.device)
-#         _K[..., 0, 0] = self._fx
-#         _K[..., 1, 1] = self._fy
-#         _K[..., 0, 2] = self._x0
-#         _K[..., 1, 2] = self._y0
-#         _K[..., 0, 1] = self._skew
-#         _K[..., 2, 2] = 1
-#         return _K
-#
-#     @K.setter
-#     def K(self, intrinsic: torch.Tensor):
-#         _K = intrinsic
-#         self._fx = nn.Parameter(_K[..., 0, 0]).to(self._fx.device)
-#         self._fy = nn.Parameter(_K[..., 1, 1]).to(self._fy.device)
-#         self._x0 = nn.Parameter(_K[..., 0, 2]).to(self._x0.device)
-#         self._y0 = nn.Parameter(_K[..., 1, 2]).to(self._y0.device)
-#         self._skew = nn.Parameter(_K[..., 0, 1]).to(self._skey.device)
-#
-#     @property
-#     def R(self):
-#         return quaternion_to_matrix(self._R_param)
-#
-#     @R.setter
-#     def R(self, rot_mat: torch.Tensor):
-#         self._R_param = nn.Parameter(matrix_to_quaternion(rot_mat)).to(self._R_param.device)
-#
-#     def freeze(self, freeze_list=['']):
-#         if 'R' in freeze_list:
-#             self._R_param.requires_grad_(False)
-#
-#         if 'f' in freeze_list:
-#             self._fx.requires_grad_(False)
-#             self._fy.requires_grad_(False)
-#
-#         if 'skew' in freeze_list:
-#             self._skew.requires_grad_(False)
-#
-#         if 'principal_point' in freeze_list:
-#             self._x0.requires_grad_(False)
-#             self._y0.requires_grad_(False)
-#
-#         remain_list = [e for e in freeze_list if e not in ['R', 'f', 'skew', 'principal_point']]
-#         super().freeze(remain_list)
-#
-#     def upgrade_only(self, unfreeze_list=['']):
-#         if 'R' not in unfreeze_list:
-#             self._R_param.requires_grad_(False)
-#
-#         if 'f' not in unfreeze_list:
-#             self._fx.requires_grad_(False)
-#             self._fy.requires_grad_(False)
-#
-#         if 'skew' not in unfreeze_list:
-#             self._skew.requires_grad_(False)
-#
-#         if 'principal_point' not in unfreeze_list:
-#             self._x0.requires_grad_(False)
-#             self._y0.requires_grad_(False)
-#
-#         remain_list = [e for e in unfreeze_list if e not in ['R', 'f', 'skew', 'principal_point']]
-#         super().upgrade_only(remain_list)
-#
-#     def __getitem__(self, i):
-#         return ParameterisePerspectiveCamera(
-#             intrinsic=self.K[i][None, ...],
-#             rotation=self.R[i][None, ...],
-#             translation=self.t[i][None, ...],
-#             scale=self.s[i][None, ...]
-#         )
