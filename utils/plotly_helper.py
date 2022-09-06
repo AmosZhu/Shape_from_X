@@ -71,9 +71,9 @@ def plotly_imageset(images, nrow=0):
     return fig
 
 
-def plotly_pointcloud_and_camera(pt3D=None, cam_matrices=None):
+def plotly_pointcloud_and_camera(pt3D: list, cam_matrices=None):
     '''
-    :param pt3D: point cloud in 3D spaces
+    :param pt3D: list of point cloud in 3D spaces
     :param cam_matrices: camera matrices in size [N, 4 x 4]
     :return:
     '''
@@ -106,16 +106,17 @@ def plotly_pointcloud_and_camera(pt3D=None, cam_matrices=None):
             )
         )
 
-    plot_data.append(
-        go.Scatter3d(
-            x=pt3D[..., 0],
-            y=pt3D[..., 1],
-            z=pt3D[..., 2],
-            mode='markers',
-            marker=dict(size=[1] * pt3D.shape[0],
-                        color=[0] * pt3D.shape[0])
+    for pc in pt3D:
+        plot_data.append(
+            go.Scatter3d(
+                x=pc[..., 0],
+                y=pc[..., 1],
+                z=pc[..., 2],
+                mode='markers',
+                marker=dict(size=[1] * pc.shape[0],
+                            color=[0] * pc.shape[0])
+            )
         )
-    )
 
     fig = go.Figure()
 

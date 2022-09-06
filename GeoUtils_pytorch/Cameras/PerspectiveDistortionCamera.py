@@ -94,8 +94,8 @@ class PerspectiveDistortionCamera(PerspectiveCamera):
         :param v: size=[batch, N, 2]
         :return: size=[batch, N ,2]
         """
-        k1, k2, k3 = self._radial[..., 0, None], self._radial[..., 1, None], self._radial[..., 2, None]
-        p1, p2 = self._tangent[..., 0, None], self._tangent[..., 1, None]
+        k1, k2, k3 = self.radial[..., 0, None], self.radial[..., 1, None], self.radial[..., 2, None]
+        p1, p2 = self.tangent[..., 0, None], self.tangent[..., 1, None]
 
         # distort the pixel in image space
         xy = v
@@ -108,7 +108,7 @@ class PerspectiveDistortionCamera(PerspectiveCamera):
         xyp = make_homegenous(torch.cat([xp[..., None], yp[..., None]], dim=2))
 
         # multiply with intrinsic camera matrix
-        v_img = torch.matmul(self._K, xyp.transpose(2, 1)).transpose(2, 1)
+        v_img = torch.matmul(self.K, xyp.transpose(2, 1)).transpose(2, 1)
 
         return v_img[..., :2]
 

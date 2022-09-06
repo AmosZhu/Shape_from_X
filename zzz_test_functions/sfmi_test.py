@@ -78,7 +78,7 @@ if __name__ == '__main__':
 
     images, (Ks, Rs, ts) = datahelper.load_data(noofImages)
     # (images, _), Ks, _ = datahelper.load_data('E:/dataset/KITTI', noofImages=noofImages)
-    device = 'cpu'
+    device = 0
 
     # selected_images = range(noofImages)
     # images = images[selected_images]
