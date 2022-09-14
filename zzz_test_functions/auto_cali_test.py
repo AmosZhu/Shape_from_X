@@ -8,18 +8,16 @@ import numpy as np
 import torch
 from PIL import Image
 import matplotlib.pyplot as plt
-from GeoUtils.Geo3D import (
+from GeoUtils_pytorch.Geo3D import (
     Epipolar,
     PnP,
 )
 from GeoUtils.common import (
     make_homegenous
 )
-from GeoUtils.Geo3D import reconstruction
-from GeoUtils.Cameras.cameras import backProjection
-from GeoUtils_pytorch.Cameras.PerspectiveCamera import (
-    ParameterisePerspectiveCamera
-)
+from GeoUtils_pytorch.Geo3D import reconstruction
+from GeoUtils_pytorch.Cameras.PerspectiveCamera import backProjection
+
 from GeoUtils_pytorch.Geo3D import bundlAdjustment as BA
 import open3d as o3d
 from utils.plots import (
@@ -48,8 +46,8 @@ def construct_matching_table(feature_list):
     for i in range(nView):
         nMaxFeat += len(feature_list[i]['row'])
 
-    vis_table = np.zeros(shape=(nView, nMaxFeat), dtype=np.bool)
-    idx_table = np.zeros(shape=(nView, nMaxFeat), dtype=np.int)
+    vis_table = np.zeros(shape=(nView, nMaxFeat), dtype=bool)
+    idx_table = np.zeros(shape=(nView, nMaxFeat), dtype=int)
 
     for i in range(nView):
         js = np.where(feature_list[i]['row'] != -1)[0]
@@ -90,11 +88,21 @@ def shift_px_to_center(px, w, h):
 
 
 if __name__ == '__main__':
-    noofImages = 3
+    noofImages = 5
 
     images, (Ks, Rs, ts) = datahelper.load_data(noofImages)
     # (images, _), Ks, _ = datahelper.load_data('E:/dataset/KITTI', noofImages=noofImages)
     device = 'cpu'
+
+    gt_P = []
+    for K, R, t in zip(Ks, Rs, ts):
+        K[0, 2] = 0
+        K[1, 2] = 0
+        K[0, 1] = 0
+        P = K @ np.concatenate([R, t[..., None]], axis=-1)
+        gt_P.append(P)
+
+    gt_P = np.stack(gt_P)
 
     # selected_images = range(noofImages)
     # images = images[selected_images]
@@ -116,7 +124,7 @@ if __name__ == '__main__':
         kp, des = SIFT.detectAndCompute(images[i], None)
         feature_list.append({'kp': kp,
                              'des': des,
-                             'px': np.array([p.pt for p in kp], dtype=np.float),
+                             'px': np.array([p.pt for p in kp], dtype=np.float32),
                              'row': -np.ones(len(kp), dtype=np.int32)})
         # kp, des = FAST.detectAndCompute(images[i], None)
 
@@ -205,21 +213,22 @@ if __name__ == '__main__':
 
             F, mask = cv2.findFundamentalMat(px1_shift, px2_shift, cv2.FM_8POINT)  # these points are all inliers
 
-            P = Epipolar.P_f_F(F)
+            P = Epipolar.P_f_F(torch.from_numpy(F[None, ...]).to(device).float())
 
-            cams['P'] = np.eye(3, 4)
-            cams['P'] = np.stack([cams['P'], P])
+            cams['P'] = torch.eye(3, 4)
+            cams['P'] = torch.stack([cams['P'], P[0]])
 
-            pt3D = reconstruction.triangulateReconstruction(pxs=np.stack([px1_shift, px2_shift]), cams=cams['P'])
+            pxs = torch.from_numpy(np.stack([px1_shift, px2_shift])).float()
+            pt3D = reconstruction.triangulateReconstruction(pxs=pxs.to(device), cams=cams['P'].to(device))
 
             # back projection test
-            img_pt_shift = backProjection(P, pt3D)
+            img_pt_shift = backProjection(P, pt3D[None, ...])[0].detach().cpu().numpy()
             img_pt = shift_px_to_center(img_pt_shift, w, h)
             plot_landmarks(images[i][None, ...], px2[None, ...], img_pt[None, ...])
 
-            scene_points_inlier = np.ones(pt3D.shape[0], dtype=np.bool)
+            scene_points_inlier = np.ones(pt3D.shape[0], dtype=bool)
 
-            scene_points = pt3D  # initial scene points
+            scene_points = pt3D.detach().cpu().numpy()  # initial scene points
             # pcd = o3d.geometry.PointCloud()
             # pcd.points = o3d.utility.Vector3dVector(scene_points)
             # o3d.visualization.draw_geometries([pcd])
@@ -239,23 +248,27 @@ if __name__ == '__main__':
             visible_px = feature_list[i]['px'][indices_i]
             visible_px_shift = shift_px_to_origin(visible_px, w, h)
 
-            P = PnP.P_f_PnP(visible_px_shift, visible_3D_pt)  # the 3D point was reconstructed by pixel coordinate shift to origins
+            P = PnP.P_f_PnP(pt2D=torch.from_numpy(visible_px_shift[None]).to(device),
+                            pt3D=torch.from_numpy(visible_3D_pt[None]).to(device))  # the 3D point was reconstructed by pixel coordinate shift to origins
 
             # triangulate all
-            cams['P'] = np.concatenate([cams['P'], P[None, ...]])
+            cams['P'] = torch.cat([cams['P'], P])
             pxs_shift = np.stack([shift_px_to_origin(feature_list[k]['px'][idx_table[k]], w, h) for k in range(i + 1)])
             pxs = np.stack([feature_list[k]['px'][idx_table[k]] for k in range(i + 1)])
 
             vis_mask = vis_table[:i + 1]
-            pt3D = reconstruction.triangulateReconstruction(pxs=pxs_shift, cams=cams['P'], mask=vis_mask)
+            pt3D = reconstruction.triangulateReconstruction(pxs=torch.from_numpy(pxs_shift).to(device),
+                                                            cams=cams['P'],
+                                                            mask=torch.from_numpy(vis_mask).to(device))
 
-            scene_points_inlier = np.ones(pt3D.shape[0], dtype=np.bool)
+            scene_points_inlier = np.ones(pt3D.shape[0], dtype=bool)
 
             # backproject to all views
             img_pt = []
+            img_pt_shift = backProjection(cams['P'], pt3D[None, ...]).detach().cpu().numpy()
             for k in range(i + 1):
-                img_pt_shift = backProjection(cams['P'][k], pt3D)
-                img_pt.append(shift_px_to_center(img_pt_shift, w, h))
+                # img_pt_shift = backProjection(cams['P'][k], pt3D)
+                img_pt.append(shift_px_to_center(img_pt_shift[k], w, h))
             img_pt = np.stack(img_pt)
             # scene_points_inlier &= ~image_outliers(img_pt, h, w)
             plot_landmarks(images[:i + 1], pxs[:, scene_points_inlier], img_pt[:, scene_points_inlier])
@@ -271,14 +284,17 @@ if __name__ == '__main__':
             # pcd.points = o3d.utility.Vector3dVector(pt3D[scene_points_inlier])
             # o3d.visualization.draw_geometries([pcd])
 
-            scene_points = pt3D
+            scene_points = pt3D.detach().cpu().numpy()
         pass
 
-    H = PnP.euclidian_rectify_f_P(cams['P'])
+    H = PnP.euclidian_rectify_f_P(cams['P']).detach().cpu().numpy()
 
     rectify_pt = make_homegenous(scene_points) @ np.linalg.pinv(H).T
     rectify_pt = rectify_pt[..., :3] / rectify_pt[..., 3:]
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(rectify_pt[scene_points_inlier])
-    o3d.visualization.draw_geometries([pcd])
+    cl, ind = pcd.remove_statistical_outlier(nb_neighbors=10, std_ratio=1)
+    # scene_points_inlier = np.zeros(pt3D.shape[0], dtype=bool)
+    # scene_points_inlier[ind] = True
 
+    o3d.visualization.draw_geometries([pcd])

@@ -76,6 +76,7 @@ def PoseEstimation_f_F_K(F, px1, px2, K1, K2=None):
     for i in range(Rs.shape[0]):
         Rt1 = np.concatenate([np.eye(3), np.zeros((3, 1))], axis=-1)
         Rt2 = np.concatenate([Rs[i], ts[i][..., None]], axis=-1)
+
         P1 = K1 @ Rt1
         P2 = K2 @ Rt2
         pt_est1 = triangulateReconstruction(pxs=np.stack([px1, px2]), cams=np.stack([P1, P2]))

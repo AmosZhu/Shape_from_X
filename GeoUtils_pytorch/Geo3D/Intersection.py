@@ -8,7 +8,7 @@ operation in 3D that found intersection between different geometries
 import torch
 
 
-def plane_intersect_line(p_normal: torch.Tensor, p_point: torch.Tensor, p1: torch.Tensor, p2: torch.Tensor):
+def plane_intersect_line(p_normal: torch.tensor, p_point: torch.tensor, p1: torch.tensor, p2: torch.tensor):
     """
     @param p_normal: the normal of the plane.  size=[3]
     @param p_point: a point lie on the plane.  size=[3]
@@ -33,7 +33,7 @@ def plane_intersect_line(p_normal: torch.Tensor, p_point: torch.Tensor, p1: torc
     return intersect_pt, intersection_mask
 
 
-def plane_intersect_segment(p_normal: torch.Tensor, p_point: torch.Tensor, p1: torch.Tensor, p2: torch.Tensor):
+def plane_intersect_segment(p_normal: torch.tensor, p_point: torch.tensor, p1: torch.tensor, p2: torch.tensor):
     """
     @param p_normal: the normal of the plane.  size=[3]
     @param p_point: a point lie on the plane.  size=[3]
@@ -60,7 +60,7 @@ def plane_intersect_segment(p_normal: torch.Tensor, p_point: torch.Tensor, p1: t
     return p3, intersection_mask
 
 
-def plane_intersect_triangles(p_normal: torch.Tensor, p_point: torch.Tensor, p1: torch.Tensor, p2: torch.Tensor, p3: torch.Tensor):
+def plane_intersect_triangles(p_normal: torch.tensor, p_point: torch.tensor, p1: torch.tensor, p2: torch.tensor, p3: torch.tensor):
     """
     @param p_normal: the normal of the plane.  size=[3]
     @param p_point: a point lie on the plane.  size=[3]
@@ -82,7 +82,7 @@ def plane_intersect_triangles(p_normal: torch.Tensor, p_point: torch.Tensor, p1:
     return intersect_pt, intersection_mask
 
 
-def plane_intersect_mesh(p_normal: torch.Tensor, p_point: torch.Tensor, F: torch.Tensor, V: torch.Tensor, v_mask: torch.Tensor = None):
+def plane_intersect_mesh(p_normal: torch.tensor, p_point: torch.tensor, F: torch.tensor, V: torch.tensor, v_mask: torch.tensor = None):
     """
     @param p_normal: the normal of the plane.  size=[3]
     @param p_point: a point lie on the plane.  size=[3]

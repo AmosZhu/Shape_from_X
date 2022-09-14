@@ -13,7 +13,7 @@ from ..common import (
 )
 
 
-def rotx(deg: torch.Tensor):
+def rotx(deg: torch.tensor):
     """
     :param deg: rotate on y-axis by deg. size=[Batch]
     :return: [Batch, 3, 3] rotation matrix
@@ -33,7 +33,7 @@ def rotx(deg: torch.Tensor):
     return Rx
 
 
-def roty(deg: torch.Tensor):
+def roty(deg: torch.tensor):
     """
     :param deg: rotate on y-axis by deg. size=[Batch]
     :return: [Batch, 3, 3] rotation matrix
@@ -53,7 +53,7 @@ def roty(deg: torch.Tensor):
     return Ry
 
 
-def rotz(deg: torch.Tensor):
+def rotz(deg: torch.tensor):
     """
     :param deg: rotate on y-axis by deg. size=[Batch]
     :return: [Batch, 3, 3] rotation matrix
@@ -73,7 +73,7 @@ def rotz(deg: torch.Tensor):
     return Rz
 
 
-def R_cleanUp(R: torch.Tensor):
+def R_cleanUp(R: torch.tensor):
     """
     Give a rotation matrix, return a clean up rotaiton matrix make sure R*RT=I
     :param R:
@@ -83,7 +83,7 @@ def R_cleanUp(R: torch.Tensor):
     return U @ Vh
 
 
-def R_f_vanishPoints(vp: torch.Tensor, K: torch.Tensor, signs=None):
+def R_f_vanishPoints(vp: torch.tensor, K: torch.tensor, signs=None):
     """
     given two orthogonal vanish points on the ground floor, the first one
     look at the z direction while the second one look at x direction.
@@ -110,7 +110,7 @@ def R_f_vanishPoints(vp: torch.Tensor, K: torch.Tensor, signs=None):
     return R_cleanUp(R)
 
 
-def P_f_K_RT(K: torch.Tensor, R: torch.Tensor, t: torch.Tensor):
+def P_f_K_RT(K: torch.tensor, R: torch.tensor, t: torch.tensor):
     """
     :param K: Intrisic matrix, size=[Batch, 3,3]
     :param R: Rotation matrix, size=[Batch, 3,3]

@@ -12,7 +12,7 @@ from GeoUtils.Geo3D.Rotation import (
 
 from GeoUtils.common import (
     make_homegenous,
-    normalise_transform
+    normalise_transform,
 )
 
 from GeoUtils.Geo3D.common3D import (
@@ -93,7 +93,7 @@ def Rts_f_PnP_K(pt2D, pt3D, K):
     # R = R_cleanUp(Rt[:, :3])
 
     U, D, Vh = np.linalg.svd(Rt[:, :3])
-    R = U.dot(Vh)
+    R = U@Vh
 
     # !!!! we choose the determinant for scale here. Because det(R)=D[0]*D[1]*D[2], we can scale by D[0], but instead we use average
     s = np.power(np.prod(D), 1 / 3)
@@ -373,39 +373,86 @@ def euclidian_rectify_f_P(P):
     assert np.ndim(P) == 3, 'Projection matrix size must be [N,3,4]'
     A = []
     for i in range(1, P.shape[0]):
-        A.append(__build_A_f_P2(P[i]))
+        A.append(__build_A_f_P(P[i]))
 
     A = np.concatenate(A)
 
     U, D, Vh = np.linalg.svd(A)
     q = Vh.conj().T[..., -1]
     q = q / q[-1]
-    Q = np.array([[q[0], 0, 0, q[1]],
-                  [0, q[0], 0, q[2]],
-                  [0, 0, 1, q[3]],
-                  [q[1], q[2], q[3], q[4]]])
+    Q = np.array([[q[0], q[1], q[2], q[3]],
+                  [q[1], q[4], q[5], q[6]],
+                  [q[2], q[5], q[7], q[8]],
+                  [q[3], q[6], q[8], q[9]]])
 
-    if np.linalg.det(Q) < 0:
-        Q = -Q
+    # Q = np.array([[q[0], 0, 0, q[1]],
+    #               [0, q[0], 0, q[2]],
+    #               [0, 0, 1, q[3]],
+    #               [q[1], q[2], q[3], q[4]]])
 
-    omegas = []
-    for i in range(P.shape[0]):
-        omegas.append(P[i] @ Q @ P[i].T)
-        # if np.linalg.det(omega) < 0:
-        #     omega = -omega
-        # K = np.linalg.cholesky(omega)
-        # Ks.append(K)
+    U, D, Vh = np.linalg.svd(Q)
 
-    omegas = np.stack(omegas)
+    # We enforce the diagnal to [1,1,1,0]
+    s0 = np.sqrt(D[0])
+    s1 = np.sqrt(D[1])
+    s2 = np.sqrt(D[2])
 
-    f = np.sqrt(Q[0, 0])
-    a = Q[0, 3] / f
-    b = Q[1, 3] / f
-    c = Q[2, 3]
+    Q_new = U @ np.diag(D) @ U.T
 
-    H = np.array([[f, 0, 0, 0],
-                  [0, f, 0, 0],
-                  [0, 0, 1, 0],
-                  [a, b, c, 1]])
+    H = np.zeros_like(U)
+
+    H[:, 0] = U[:, 0] * s0
+    H[:, 1] = U[:, 1] * s1
+    H[:, 2] = U[:, 2] * s2
+    H[:, 3] = U[:, 3]
+
+    Q_reco = H @ np.diag([1, 1, 1, 0]) @ H.T
+
+    # Q_hat = U @ np.diag([1, 1, 1, 0]) @ Vh  # clean up the dual quadratic
+    # # H = Vh
+    #
+    # DIACs = []
+    # Ks = []
+    # for i in range(P.shape[0]):
+    #     DIAC = P[i] @ Q @ P[i].T  # the DIAC is the image of dual quadratic project in each view
+    #     # DIAC = DIAC / DIAC[-1, -1]  # the last element should be 1
+    #     DIACs.append(DIAC)
+    #     # if np.linalg.det(omega) < 0:
+    #     #     omega = -omega
+    #     # K = np.linalg.cholesky(DIAC).T
+    #     # Ks.append(K)
+    #
+    # # # recover H from Q, where Q=H@I@H
+    # DIAC_0 = Q[:3, :3]
+    # K = np.linalg.cholesky(DIAC_0).T
+    #
+    # H_c = Q[3, :3] @ np.linalg.inv(K.T)
+    #
+    # H = np.zeros(shape=[4, 4], dtype=np.float32)
+    # H[:3, :3] = K
+    # H[3, :3] = H_c
+    # H[3, 3] = 1.0
+
+    # omegas = []
+    # for i in range(P.shape[0]):
+    #     omega = P[i] @ Q @ P[i].T
+    #     # omega = omega / omega[-1, -1] # the last element should be 1
+    #     omegas.append(omega)
+    #     # if np.linalg.det(omega) < 0:
+    #     #     omega = -omega
+    #     # K = np.linalg.cholesky(omega)
+    #     # Ks.append(K)
+    #
+    # omegas = np.stack(omegas)
+    #
+    # f = np.sqrt(Q[0, 0])
+    # a = Q[0, 3] / f
+    # b = Q[1, 3] / f
+    # c = Q[2, 3]
+    #
+    # H1 = np.array([[f, 0, 0, 0],
+    #                [0, f, 0, 0],
+    #                [0, 0, 1, 0],
+    #                [a, b, c, 1]])
 
     return H

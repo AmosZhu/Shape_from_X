@@ -10,7 +10,8 @@ from GeoUtils_pytorch.Geo3D.Rotation import (
 )
 
 from GeoUtils_pytorch.common import (
-    make_homegenous
+    make_homegenous,
+    make_tensor_homogenous
 )
 
 
@@ -141,13 +142,22 @@ class PerspectiveCamera(BaseCamera):
     def P(self):
         """
         The projection matrix of the camera
-        :return:
+        :return: projection matrix size=[nView, 3, 4]
         """
         if len(self) > 0:
             _P = P_f_K_RT(self.K, self.R, self.t)
             return self.s[..., None, None] * _P
         else:
             return None
+
+    @property
+    def M(self):
+        """
+        Returns: A homogenous transform matrix that in orieantion and location of the matrix.
+            size=[nView, 4, 4]
+        """
+        M = torch.cat([self.orientation, self.C[..., None]], dim=-1)
+        return make_tensor_homogenous(M)
 
     def get_camera_center(self):
         return self.C
@@ -165,7 +175,7 @@ class PerspectiveCamera(BaseCamera):
         :param V: size=[batch, N, 3]
         :return: size=[batch, N, 3]
         """
-        return torch.matmul(self.R, V.transpose(2, 1)).transpose(2, 1) + self.t[:, None, :]
+        return (self.R @ V.transpose(2, 1)).transpose(2, 1) + self.t[:, None, :]
 
     def view_to_image(self, V: torch.Tensor):
         """
@@ -210,7 +220,7 @@ class PerspectiveCamera(BaseCamera):
         self.R = torch.cat([self.R, rotation.to(self.device)])
         self.t = torch.cat([self.t, translation.to(self.device)])
 
-        s = torch.ones(size=(nView), dtype=torch.float32) if scale is None else scale
+        s = torch.ones(size=(nView,), dtype=torch.float32) if scale is None else scale
         self.s = torch.cat([self.s, s.to(self.device)])
 
         K = self.K[0][None, ...] if intrinsic is None else intrinsic

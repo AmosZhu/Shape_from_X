@@ -31,7 +31,7 @@ def plot_landmarks(images, ld1, ld2, titles=None):
     for ax, im, op_ld, J_ld, title in zip(axarr.ravel(), images, ld1, ld2, titles):
         ax.imshow(im)
         ax.plot(op_ld[sel, 0], op_ld[sel, 1], 'rx')
-        ax.plot(J_ld[sel, 0], J_ld[sel, 1], 'gx')
+        ax.plot(J_ld[sel, 0], J_ld[sel, 1], 'g+')
         ax.axis('off')
         ax.set_title(title)
 

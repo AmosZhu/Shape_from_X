@@ -22,7 +22,7 @@ def rotx(deg):
 
     Rx = np.array([[1, 0, 0],
                    [0, cosx, -sinx],
-                   [0, sinx, cosx]])
+                   [0, sinx, cosx]], dtype=np.float32)
 
     return Rx
 
@@ -39,7 +39,7 @@ def roty(deg):
 
     Ry = np.array([[cosx, 0, sinx],
                    [0, 1, 0],
-                   [-sinx, 0, cosx]])
+                   [-sinx, 0, cosx]], dtype=np.float32)
 
     return Ry
 
@@ -56,7 +56,7 @@ def rotz(deg):
 
     Rz = np.array([[cosx, -sinx, 0],
                    [sinx, cosx, 0],
-                   [0, 0, 1]])
+                   [0, 0, 1]], dtype=np.float32)
 
     return Rz
 

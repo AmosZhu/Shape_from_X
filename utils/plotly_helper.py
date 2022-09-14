@@ -9,6 +9,13 @@ import plotly.graph_objects as go
 import numpy as np
 from GeoUtils.common import make_homegenous
 
+cmap = {0: 'steelblue',
+        1: 'crimson',
+        2: 'darkgoldenrod',
+        3: 'darkblue',
+        4: 'gold',
+        5: 'cornflwoerblue'}
+
 
 def get_camera(M=np.eye(4), scale=1):
     """
@@ -118,11 +125,84 @@ def plotly_pointcloud_and_camera(pt3D: list, cam_matrices=None):
             )
         )
 
-    fig = go.Figure()
+    fig = go.Figure(data=plot_data,
+                    layout=go.Layout(
+                        showlegend=False,
+                    ))
 
-    for data in plot_data:
-        fig.add_trace(data)
+    return fig
 
-    fig.update_layout(showlegend=False)
+
+def plotly_meshes_and_cameras(meshes: list, cameras=[]):
+    '''
+    :param meshes: list of mesh info:
+        i.e meshes=[{'name':'plane', 'data': meshes}, ...]
+    :param cam_matrices_list: camera matrices list contains name and transformation
+        i.e cameras=[{'name':'GT', 'data': matrices}, ...]
+    :return:
+    '''
+
+    plot_data = []
+
+    for j, cam_info in enumerate(cameras):
+        cam_name = cam_info['name']
+        cam_matrices = cam_info['data']
+        for i, cam_P in enumerate(cam_matrices):
+            vertices, faces, wireframe = get_camera(M=cam_P, scale=0.2)
+            plot_data.append(
+                go.Mesh3d(
+                    x=vertices[:, 0].tolist(),
+                    y=vertices[:, 1].tolist(),
+                    z=vertices[:, 2].tolist(),
+                    i=faces[:, 0].tolist(),
+                    j=faces[:, 1].tolist(),
+                    k=faces[:, 2].tolist(),
+                    color='#00ff00',
+                    opacity=0.01,
+                    name=f'{cam_name}_{i}',
+                    legendgroup=cam_name,
+                    showlegend=False
+                )
+            )
+
+            wireframe_merged = merge_wireframes(wireframe)
+            plot_data.append(
+                go.Scatter3d(
+                    x=wireframe_merged[0],
+                    y=wireframe_merged[1],
+                    z=wireframe_merged[2],
+                    mode="lines",
+                    line=dict(color=cmap[j], width=1),
+                    opacity=1,
+                    name=f'{cam_name}_{i}',
+                    legendgroup=cam_name,
+                    showlegend=True if i == 0 else False
+                )
+            )
+
+    for i, mesh_info in enumerate(meshes):
+        mesh_name = mesh_info['name']
+        mesh = mesh_info['data']
+        plot_data.append(
+            go.Mesh3d(
+                x=mesh.v[..., 0],
+                y=mesh.v[..., 1],
+                z=mesh.v[..., 2],
+                i=mesh.f[..., 0],
+                j=mesh.f[..., 1],
+                k=mesh.f[..., 2],
+                opacity=1.0,
+                intensity=mesh.v[..., 2],
+                colorscale='viridis',
+                showlegend=True,
+                showscale=False,
+                name=mesh_name
+            )
+        )
+
+    fig = go.Figure(data=plot_data,
+                    layout=go.Layout(
+                        showlegend=True,
+                    ))
 
     return fig
