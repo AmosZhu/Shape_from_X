@@ -61,27 +61,31 @@ def Rts_f_P_K(P: torch.tensor, K: torch.tensor):
 
     Remember we can P by AP=0 using SVD, so P is up to scale, Because A*(kP)=0 while k is a scale factor.
     Reference: Multiple View Geometry in Computer vision(Second Edition). Page 179. Equation 7.2
-    :param P: size=[3,4]
-    :param K: size=[3,3]
-    :return: R: size=[3,3], t=[3]
+    :param P: size=[nView, 3,4]
+    :param K: size=[nView, 3,3]
+    :return: R: size=[nView, 3,3], t=[nView, 3]
     """
 
     # because P=K[R |t]. So R=K^(-1)P[...,:3]
     K_inv = torch.linalg.pinv(K)
     R = K_inv @ P[..., :3]
+    #
+    # R, K_est = torch.linalg.qr(P[..., :3])
+    # K_est = K_est / K_est[:, -1, -1][..., None, None]
+    # K_inv = torch.linalg.pinv(K_est)
 
     U, D, Vh = torch.linalg.svd(R)
     R_hat = U @ Vh
 
     # !!!! we choose the determinant for scale here. Because det(R)=D[0]*D[1]*D[2], we can scale by D[0], but instead we use average
-    s = torch.pow(torch.prod(D), 1 / 3)
-    t = K_inv @ P[..., 3:] / s  # D[0]
+    s = torch.pow(torch.prod(D, dim=-1), 1 / 3)
+    t = (K_inv @ P[..., 3:] / s[..., None, None]).squeeze(-1)  # D[0]
 
     sign = torch.linalg.det(R_hat)
-    R_hat *= sign
-    t *= sign
+    R_hat *= sign[..., None, None]
+    t *= sign[..., None]
 
-    return R_hat, t.squeeze(-1), s
+    return R_hat, t, s
 
 
 def Rts_f_PnP_K(pt2D: torch.tensor, pt3D: torch.tensor, K: torch.tensor):
@@ -92,22 +96,6 @@ def Rts_f_PnP_K(pt2D: torch.tensor, pt3D: torch.tensor, K: torch.tensor):
     :param K: size=[nViews,3,3] intrinsick parameters
     :return:
     """
-
-    # K_inv = torch.pinverse(K)
-    # pt3Dh = make_homegenous(pt3D)
-    #
-    # bs, N = pt2D.shape[:2]
-    # A = torch.zeros(size=[bs, N * 2, 12], dtype=torch.float32).to(pt2D.device)
-    #
-    # A[..., :N, 4:8] = -pt3Dh
-    # A[..., :N, 8:] = pt2D[..., 1][..., None] * pt3Dh
-    # A[..., N:, :4] = pt3Dh
-    # A[..., N:, 8:] = -pt2D[..., 0][..., None] * pt3Dh
-    #
-    # _, _, Vh = torch.linalg.svd(A)
-    # p = Vh.mH[..., -1]
-    #
-    # P = p.view([bs, 3, 4])
 
     P = P_f_PnP(pt2D, pt3D)
 
@@ -120,12 +108,6 @@ def Rts_f_PnP_K(pt2D: torch.tensor, pt3D: torch.tensor, K: torch.tensor):
     R *= torch.linalg.det(R)
 
     t = t_f_PnP_K_R(pt2D, pt3D, K, R)
-
-    # t = (torch.matmul(K_inv, P[..., 3, None]).squeeze() / D[..., 0, None])
-    #
-    # signs = torch.det(R_hat)
-    # R_hat = signs[..., None, None] * R_hat
-    # t = signs[..., None] * t
 
     return R, t, s
 
@@ -398,12 +380,11 @@ def __build_A_f_P(P):
     return A.view(-1, 10)
 
 
-def euclidian_rectify_f_P(P):
+def ADQ_f_P(P: torch.tensor):
     '''
     Compute Absolute dual quadirc from Projection matrices.
-    Reference: Multiple view Geometry in Computer vision(Second edtion). 19.3. Page 464
-    :param P: A set of projection matrices. size=[nBatch, 3 ,4]
-    :return: euclidian transformation matrix size=[4,4]
+    :param P: The projection matrices. size=[nView, 3, 4]
+    :return: The absoluste dual quadirc. size=[4, 4]
     '''
     assert len(P.shape) == 3, 'Projection matrix size must be [N,3,4]'
     A = __build_A_f_P(P)
@@ -415,6 +396,16 @@ def euclidian_rectify_f_P(P):
                       [q[1], q[4], q[5], q[6]],
                       [q[2], q[5], q[7], q[8]],
                       [q[3], q[6], q[8], q[9]]]).to(P.device)
+
+    return Q
+
+
+def H_f_ADQ(Q: torch.tensor):
+    '''
+    Compute the euclidian transformation matrix from absolute dual quadric
+    :param Q: The absolute dual quadric size=[4, 4]
+    :return: H: euclidian transformation matrix size=[4,4]
+    '''
 
     U, D, Vh = torch.linalg.svd(Q)
 
@@ -428,6 +419,25 @@ def euclidian_rectify_f_P(P):
     H[:, 3] = U[:, 3]
 
     return H
+
+
+def euclidian_rectify_f_P(P: torch.tensor, pt3D: torch.tensor):
+    '''
+    Compute Absolute dual quadirc from Projection matrices.
+    Reference: Multiple view Geometry in Computer vision(Second edtion). 19.3. Page 464
+    :param P: A set of projection matrices. ize=[nView, 3, 4]
+    :param pt3D: A set of point cloud that under projective frame size=[N,3]
+    :return: pt3D under euclidian reconstruction
+    '''
+    assert len(P.shape) == 3, 'Projection matrix size must be [N,3,4]'
+    assert len(pt3D.shape) == 2, 'No batch support, assume same point cloud across all views'
+    Q = ADQ_f_P(P)
+    H = H_f_ADQ(Q)
+
+    rectify_pt = make_homegenous(pt3D) @ torch.linalg.pinv(H).mT
+    rectify_pt = rectify_pt[..., :3] / rectify_pt[..., 3:]
+
+    return rectify_pt
 
 
 def K_f_PnP_Rt(pt2D: torch.tensor, pt3D: torch.tensor, R: torch.tensor, t: torch.tensor):

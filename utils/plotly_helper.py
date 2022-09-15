@@ -78,7 +78,7 @@ def plotly_imageset(images, nrow=0):
     return fig
 
 
-def plotly_pointcloud_and_camera(pt3D: list, cam_matrices=None):
+def plotly_pointcloud_and_camera(pt3D: list, cameras=[], cam_scale=1):
     '''
     :param pt3D: list of point cloud in 3D spaces
     :param cam_matrices: camera matrices in size [N, 4 x 4]
@@ -86,48 +86,63 @@ def plotly_pointcloud_and_camera(pt3D: list, cam_matrices=None):
     '''
     plot_data = []
 
-    for cam_P in cam_matrices:
-        vertices, faces, wireframe = get_camera(M=cam_P, scale=0.2)
-        plot_data.append(
-            go.Mesh3d(
-                x=vertices[:, 0].tolist(),
-                y=vertices[:, 1].tolist(),
-                z=vertices[:, 2].tolist(),
-                i=faces[:, 0].tolist(),
-                j=faces[:, 1].tolist(),
-                k=faces[:, 2].tolist(),
-                color='#00ff00',
-                opacity=0.01,
+    for j, cam_info in enumerate(cameras):
+        cam_name = cam_info['name']
+        cam_matrices = cam_info['data']
+        for i, cam_P in enumerate(cam_matrices):
+            vertices, faces, wireframe = get_camera(M=cam_P, scale=cam_scale)
+            plot_data.append(
+                go.Mesh3d(
+                    x=vertices[:, 0].tolist(),
+                    y=vertices[:, 1].tolist(),
+                    z=vertices[:, 2].tolist(),
+                    i=faces[:, 0].tolist(),
+                    j=faces[:, 1].tolist(),
+                    k=faces[:, 2].tolist(),
+                    color='#00ff00',
+                    opacity=0.01,
+                    name=f'{cam_name}_{i}',
+                    legendgroup=cam_name,
+                    showlegend=False
+                )
             )
-        )
 
-        wireframe_merged = merge_wireframes(wireframe)
-        plot_data.append(
-            go.Scatter3d(
-                x=wireframe_merged[0],
-                y=wireframe_merged[1],
-                z=wireframe_merged[2],
-                mode="lines",
-                line=dict(color="#ff0000", width=1),
-                opacity=1,
+            wireframe_merged = merge_wireframes(wireframe)
+            plot_data.append(
+                go.Scatter3d(
+                    x=wireframe_merged[0],
+                    y=wireframe_merged[1],
+                    z=wireframe_merged[2],
+                    mode="lines",
+                    line=dict(color=cmap[j], width=1),
+                    opacity=1,
+                    name=f'{cam_name}_{i}',
+                    legendgroup=cam_name,
+                    showlegend=True if i == 0 else False
+                )
             )
-        )
 
-    for pc in pt3D:
+    for pc_info in pt3D:
+        pc_name = pc_info['name']
+        pc = pc_info['data']
+
         plot_data.append(
             go.Scatter3d(
                 x=pc[..., 0],
                 y=pc[..., 1],
                 z=pc[..., 2],
                 mode='markers',
-                marker=dict(size=[1] * pc.shape[0],
-                            color=[0] * pc.shape[0])
+                marker=dict(
+                    size=1,
+                    color='crimson'),
+                name=pc_name,
+                showlegend=True
             )
         )
 
     fig = go.Figure(data=plot_data,
                     layout=go.Layout(
-                        showlegend=False,
+                        showlegend=True,
                     ))
 
     return fig

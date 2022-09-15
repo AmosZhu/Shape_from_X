@@ -12,11 +12,13 @@ from GeoUtils_pytorch.Geo3D import (
     Epipolar,
     PnP,
 )
-from GeoUtils.common import (
+
+from GeoUtils.Geo3D import (PnP as PnP_CPU)
+from GeoUtils_pytorch.common import (
     make_homegenous
 )
 from GeoUtils_pytorch.Geo3D import reconstruction
-from GeoUtils_pytorch.Cameras.PerspectiveCamera import backProjection
+from GeoUtils_pytorch.Cameras.PerspectiveCamera import backProjection, PerspectiveCamera
 
 from GeoUtils_pytorch.Geo3D import bundlAdjustment as BA
 import open3d as o3d
@@ -88,7 +90,7 @@ def shift_px_to_center(px, w, h):
 
 
 if __name__ == '__main__':
-    noofImages = 5
+    noofImages = 3
 
     images, (Ks, Rs, ts) = datahelper.load_data(noofImages)
     # (images, _), Ks, _ = datahelper.load_data('E:/dataset/KITTI', noofImages=noofImages)
@@ -251,6 +253,10 @@ if __name__ == '__main__':
             P = PnP.P_f_PnP(pt2D=torch.from_numpy(visible_px_shift[None]).to(device),
                             pt3D=torch.from_numpy(visible_3D_pt[None]).to(device))  # the 3D point was reconstructed by pixel coordinate shift to origins
 
+            # P = PnP_CPU.P_f_PnP(pt2D=visible_px_shift,
+            #                     pt3D=visible_3D_pt)
+            # P = torch.from_numpy(P).to(device)[None].float()
+
             # triangulate all
             cams['P'] = torch.cat([cams['P'], P])
             pxs_shift = np.stack([shift_px_to_origin(feature_list[k]['px'][idx_table[k]], w, h) for k in range(i + 1)])
@@ -287,14 +293,90 @@ if __name__ == '__main__':
             scene_points = pt3D.detach().cpu().numpy()
         pass
 
-    H = PnP.euclidian_rectify_f_P(cams['P']).detach().cpu().numpy()
+    # cams['P'] = -cams['P']
 
-    rectify_pt = make_homegenous(scene_points) @ np.linalg.pinv(H).T
-    rectify_pt = rectify_pt[..., :3] / rectify_pt[..., 3:]
+    rectify_pt = PnP.euclidian_rectify_f_P(cams['P'], pt3D).detach().cpu().numpy()
+
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(rectify_pt[scene_points_inlier])
     cl, ind = pcd.remove_statistical_outlier(nb_neighbors=10, std_ratio=1)
-    # scene_points_inlier = np.zeros(pt3D.shape[0], dtype=bool)
-    # scene_points_inlier[ind] = True
+    # o3d.visualization.draw_geometries([pcd])
 
-    o3d.visualization.draw_geometries([pcd])
+    Q = PnP.ADQ_f_P(cams['P'])
+    H = PnP.H_f_ADQ(Q)
+
+    P = cams['P'] @ H[None]
+
+    omegas = P @ torch.diag(torch.tensor([1, 1, 1, 0], dtype=torch.float32)) @ P.mT
+    omegas = omegas / omegas[:, -1, -1][..., None, None]
+    K = torch.linalg.cholesky(omegas).mT
+    K_new = torch.zeros_like(K)
+    for i, KK in enumerate(K):
+        K_new[i] = KK / KK[-1, -1]
+    print(K_new)
+
+    [R, t, s] = PnP.Rts_f_P_K(P, K_new)
+    Rt = torch.cat([R, t[..., None]], dim=-1)
+    pt3D = torch.from_numpy(rectify_pt).to(device)
+
+    combination = [(Rt, pt3D),
+                   # (-Rt, pt3D),
+                   # (Rt, -pt3D),
+                   (-Rt, -pt3D)]
+
+    # check the which one is correct combination
+    numNegatives = []
+    for comb in combination:
+        Rt_sel = comb[0]
+        pt = comb[1]
+        pt_view = (make_homegenous(pt)[None, ...] @ Rt_sel.mT)
+
+        neg = torch.sum(pt_view[..., -1] < 0)
+        numNegatives.append(neg)
+
+    numNegatives = torch.tensor(numNegatives)
+    idx = torch.argmin(numNegatives, dim=0)
+
+    comb_sel = combination[idx]
+
+    Rt = comb_sel[0]
+    pt3D = comb_sel[1]
+
+    # f = K_new[0, 0, 0]
+    #
+    # R1 = []
+    # t1 = []
+    # s1 = []
+    # K = torch.diag(torch.tensor([f, f, 1], dtype=torch.float32)).to(device)[None]
+    # vis_table, idx_table = construct_matching_table(feature_list)
+    # for i in range(noofImages):
+    #     n3Dpoints = len(scene_points)
+    #     visible_3D_mask = vis_table[i, :n3Dpoints]  # we are now in ith view, we only take the 3D points visible by this view
+    #     if scene_points_inlier is not None:
+    #         visible_3D_mask = visible_3D_mask & scene_points_inlier
+    #     visible_3D_pt = rectify_pt[visible_3D_mask]
+    #
+    #     trunk_idx = idx_table[i, :n3Dpoints][visible_3D_mask]  # because the len(feature_table)>=len(scene_points)
+    #     indices_i = trunk_idx[trunk_idx != -1]
+    #     visible_px = feature_list[i]['px'][indices_i]
+    #     visible_px_shift = shift_px_to_origin(visible_px, w, h)
+    #     [RR, tt, ss] = PnP.Rts_f_PnP_K(torch.from_numpy(visible_px_shift[None]).to(device),
+    #                                    torch.from_numpy(visible_3D_pt[None]).to(device),
+    #                                    K)
+    #     R1.append(RR)
+    #     t1.append(tt)
+    #     s1.append(ss)
+    #
+    # R1 = torch.cat(R1)
+    # t1 = torch.cat(t1)
+    # s1 = torch.cat(s1)
+
+    cameras = PerspectiveCamera(intrinsic=K_new,
+                                rotation=Rt[..., :3],
+                                translation=Rt[..., 3],
+                                scale=s)
+
+    fig = plotly_pointcloud_and_camera(pt3D=[{'name': 'point cloud', 'data': pt3D[scene_points_inlier]}],
+                                       cameras=[{'name': 'cameras', 'data': cameras.M.detach().cpu().numpy()}],
+                                       cam_scale=500)
+    fig.show()
