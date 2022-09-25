@@ -1,7 +1,7 @@
 # Shape_from_X
-Mainly this repository is for education purpose and will contains some examples of 3D reconstruction with different methods. Including both DNN and classical methods.
+Mainly this repository is for education purpose and will contain some examples of 3D reconstruction with different methods. Including both DNN and classical methods.
 
-Also I am trying to migrate something I used daily into python package.
+Also, I am trying to migrate something I used daily into python package.
 It will include utilities functions like I used for pytorch and some notebooks for easy explanation.
 
 ### Notebooks
@@ -17,7 +17,7 @@ It will include utilities functions like I used for pytorch and some notebooks f
 - [x] Auto calibration
 - [ ] Trifocal tensor estimation
 
-#### Scene Reconstruction
+#### Neural Scene
 
 - [ ] Nerf
 - [ ] Barf
