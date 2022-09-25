@@ -17,6 +17,13 @@ It will include utilities functions like I used for pytorch and some notebooks f
 - [x] Auto calibration
 - [ ] Trifocal tensor estimation
 
+#### Scene Reconstruction
+
+- [ ] Nerf
+- [ ] Barf
+- [ ] Nerf++
+- [ ] Neus
+
 #### Polarisation
 
 - [ ] Retrieve polarisation images

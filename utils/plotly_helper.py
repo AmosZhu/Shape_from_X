@@ -17,7 +17,7 @@ cmap = {0: 'steelblue',
         5: 'cornflwoerblue'}
 
 
-def get_camera(M=np.eye(4), scale=1):
+def get_camera(M=np.eye(4), scale=1.0):
     """
     Get camera by type
     :param M: transform the matrix in [3X4]
@@ -78,7 +78,7 @@ def plotly_imageset(images, nrow=0):
     return fig
 
 
-def plotly_pointcloud_and_camera(pt3D: list, cameras=[], cam_scale=1):
+def plotly_pointcloud_and_camera(pt3D: list = [], cameras=[], cam_scale=0.2):
     '''
     :param pt3D: list of point cloud in 3D spaces
     :param cam_matrices: camera matrices in size [N, 4 x 4]
@@ -148,7 +148,7 @@ def plotly_pointcloud_and_camera(pt3D: list, cameras=[], cam_scale=1):
     return fig
 
 
-def plotly_meshes_and_cameras(meshes: list, cameras=[]):
+def plotly_meshes_and_cameras(meshes: list, cameras=[], cam_scale=0.2):
     '''
     :param meshes: list of mesh info:
         i.e meshes=[{'name':'plane', 'data': meshes}, ...]
@@ -163,7 +163,7 @@ def plotly_meshes_and_cameras(meshes: list, cameras=[]):
         cam_name = cam_info['name']
         cam_matrices = cam_info['data']
         for i, cam_P in enumerate(cam_matrices):
-            vertices, faces, wireframe = get_camera(M=cam_P, scale=0.2)
+            vertices, faces, wireframe = get_camera(M=cam_P, scale=cam_scale)
             plot_data.append(
                 go.Mesh3d(
                     x=vertices[:, 0].tolist(),
