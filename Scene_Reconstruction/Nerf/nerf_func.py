@@ -36,6 +36,8 @@ from pytorch3d.renderer import (
 from torch.utils.data.distributed import DistributedSampler
 
 from model.NerfRaymarcher import NerfRaymarcher
+from model.NerfRaysampler import ProbabilisticRaysampler
+
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -49,6 +51,7 @@ from GeoUtils_pytorch.Geo3D.Rotation import (
     rotx
 )
 from utils.plotly_helper import plotly_pointcloud_and_camera
+from pytorch3d.transforms.transform3d import _check_valid_rotation_matrix
 
 # from nerf_utils import (
 #     make_video,
@@ -85,7 +88,7 @@ def tensorboard_add_images(
         max_depth=1):
     # Render using the grid renderer and the
     # batched_forward function of neural_radiance_field.
-    rendered_image_silhouette, _ = renderer_grid(
+    (rendered_image_silhouette, _), _ = renderer_grid(
         cameras=camera,
         volumetric_function=neural_radiance_field.batch_forward,
         max_depth=max_depth
@@ -127,7 +130,7 @@ def generate_rotating_nerf(nerf_model, renderer: ImplicitRenderer, K, image_size
 
     images = []
     for i in tqdm(range(n_frames)):
-        rendered_images, sampled_rays = renderer(
+        (rendered_images, _), sampled_rays = renderer(
             cameras=sample_cameras[i],
             volumetric_function=nerf_model.batch_forward,
             max_depth=max_depth
@@ -168,7 +171,7 @@ def show_full_render(
     with torch.no_grad():
         # Render using the grid renderer and the
         # batched_forward function of neural_radiance_field.
-        rendered_image_silhouette, _ = renderer_grid(
+        (rendered_image_silhouette, _), _ = renderer_grid(
             cameras=camera,
             volumetric_function=neural_radiance_field.batch_forward,
         )
@@ -218,7 +221,7 @@ def sample_images_from_rays(images, sampled_xy):
     return images_sampled.squeeze(-1).transpose(1, 2)  # images_sampled.view(ba, sampled_xy.shape[1], dim)
 
 
-def train_nerf(device, world_size, epochs=100, learning_rate=1e-3, save_epochs=10, batch_size=10, model_sel='mlp', object='lego', output_dir='output'):
+def train_nerf(device, world_size, epochs=100, learning_rate=1e-3, save_epochs=10, batch_size=10, bFine=True, model_sel='mlp', object='lego', output_dir='output'):
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '12310'
 
@@ -278,19 +281,33 @@ def train_nerf(device, world_size, epochs=100, learning_rate=1e-3, save_epochs=1
         raysampler=raysampler_grid, raymarcher=raymarcher,
     )
 
-    # MonteCarlo raysampler will take random rays from images, it will be using for training
-    raysampler_mc = MonteCarloRaysampler(
+    # MonteCarlo ray sampler will take random rays from images, it will be using for training
+    stratified = True
+    n_rays_per_image = 512
+    raysampler_coarse = MonteCarloRaysampler(
         min_x=-1.0,
         max_x=1.0,
         min_y=-1.0,
         max_y=1.0,
-        n_rays_per_image=1024,
+        n_rays_per_image=n_rays_per_image,
         n_pts_per_ray=128,
         min_depth=min_depth,
         max_depth=max_depth,
+        stratified_sampling=stratified
     )
-    renderer_mc = ImplicitRenderer(
-        raysampler=raysampler_mc, raymarcher=raymarcher,
+    renderer_coarse = ImplicitRenderer(
+        raysampler=raysampler_coarse, raymarcher=raymarcher,
+    )
+
+    # Define a fine ray sampler by using desnity function provided by coarse ray sampler.
+    raysampler_fine = ProbabilisticRaysampler(
+        n_pts_per_ray=128,  # extra sampling point
+        stratified_sampling=stratified,
+        stratified_test=False,
+        add_input_samples=True,
+    )
+    renderer_fine = ImplicitRenderer(
+        raysampler=raysampler_fine, raymarcher=raymarcher,
     )
 
     if model_sel == 'mlp':
@@ -332,13 +349,23 @@ def train_nerf(device, world_size, epochs=100, learning_rate=1e-3, save_epochs=1
             sample_cameras = cameras_from_opencv_projection(R=R.to(device), tvec=t.to(device), camera_matrix=K.to(device),
                                                             image_size=torch.tensor([image_height, image_width]).expand(K.shape[0], 2).to(device))
 
-            # Evaluate the nerf model.
-            sample_images, sampled_rays = renderer_mc(
+            # Evaluate the nerf model with coarse render.
+            (sample_images, weight), sampled_rays = renderer_coarse(
                 cameras=sample_cameras,
                 volumetric_function=ddp_nerfModel,
                 stratified_sampling=True,
                 max_depth=max_depth,
             )
+
+            if bFine:
+                # Evaluate the nerf model with fine render.
+                (sample_images, _), sampled_rays = renderer_fine(
+                    cameras=sample_cameras,
+                    volumetric_function=ddp_nerfModel,
+                    input_ray_bundle=sampled_rays,
+                    ray_weights=weight,
+                    max_depth=max_depth,
+                )
 
             sample_img_rgb = sample_images[..., :3]
             sample_img_alpha = sample_images[..., 3]
@@ -369,7 +396,7 @@ def train_nerf(device, world_size, epochs=100, learning_rate=1e-3, save_epochs=1
             writer.add_scalar('loss/pnsr', mse2psnr(loss_rgb.item()), epoch)
 
         # Visualize the renders every 100 iterations.
-        if device == 0 and epoch % save_epochs == 0:
+        if device == 0 and epoch % save_epochs == 0 and epoch != 0:
             with torch.no_grad():
                 # for show_idx in range(len(sample_cameras)):
                 (val_K, val_R, val_t), (val_images, val_silhouettes) = random_select_f_dataset(val_nerfdataset)

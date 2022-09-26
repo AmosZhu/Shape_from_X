@@ -17,6 +17,7 @@ for object in "${objectArray[@]}"; do
   #  python3 nueral_radiance/train_nerf_entry.py --epochs $num_epochs --save_epochs $num_save --batch_size=10 --learning_rate 1e-3 --model_sel fourier --object $object
   #  python3 nueral_radiance/evaluate_nerf.py --model_sel fourier --object $object
 
-  python3 train_nerf.py --epochs $num_epochs --save_epochs $num_save --batch_size=5 --learning_rate 1e-3 --model_sel nerf --object $object --output output
-#  python3 nueral_radiance/evaluate_nerf.py --model_sel nerf --object $object --save_folder output_2
+  python3 train_nerf.py --epochs $num_epochs --save_epochs $num_save --batch_size=10 --learning_rate 1e-3 --fine=0 --model_sel nerf --object $object --output output_coarse
+  #  python3 train_nerf.py --epochs $num_epochs --save_epochs $num_save --batch_size=4 --learning_rate 1e-3 --fine=1 --model_sel nerf --object $object --output output_fine
+  #  python3 nueral_radiance/evaluate_nerf.py --model_sel nerf --object $object --save_folder output_2
 done

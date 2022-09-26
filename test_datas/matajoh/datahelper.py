@@ -24,7 +24,12 @@ class matajohDataset(Dataset):
         self.load(name, mode)
 
     def load(self, name, mode):
-        data = np.load(os.path.join(__dirpath__, name))
+        filename = os.path.join(__dirpath__, 'data', name)
+        # if os.path.exists(filename):
+        #     # download the data
+        #     pass
+
+        data = np.load(filename)
         test_end, height, width = data["images"].shape[:3]
         split_counts = data["split_counts"]
         train_end = split_counts[0]
