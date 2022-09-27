@@ -225,6 +225,10 @@ def train_nerf(device, world_size, epochs=100, learning_rate=1e-3, save_epochs=1
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '12310'
 
+    # The Ampere card give numerical error by using TF32.
+    torch.backends.cuda.matmul.allow_tf32 = False
+    torch.backends.cudnn.allow_tf32 = False
+
     print('rank: {}'.format(device))
     output_folder = os.path.join(output_dir, model_sel, object)
     os.makedirs(output_folder, exist_ok=True)

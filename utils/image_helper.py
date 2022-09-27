@@ -2,6 +2,8 @@
 Author: dizhong zhu
 Date: 24/09/2022
 """
+import cv2
+import numpy as np
 
 
 def make_video(imgs, out_path, fps=10):
@@ -11,3 +13,17 @@ def make_video(imgs, out_path, fps=10):
     for img in imgs:
         video.write(img)
     video.release()
+
+
+def images_f_video(video_path):
+    vidcap = cv2.VideoCapture(video_path)
+    images = []
+
+    while vidcap.isOpened():
+        ret, frame = vidcap.read()
+        if ret:
+            images.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        else:
+            break
+
+    return np.stack(images)

@@ -8,6 +8,7 @@ import torch.multiprocessing as mp
 from nerf_func import train_nerf
 import argparse
 
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Distributed training for Nerf')
     parser.add_argument('--object', default='lego', type=str, help='object to train, antinous, benin, lego, matthew, rubik, trex')
