@@ -19,7 +19,7 @@ It will include utilities functions like I used for pytorch and some notebooks f
 
 #### Neural Scene
 
-- [ ] Nerf
+- [x] Nerf
 - [ ] Barf
 - [ ] Nerf++
 - [ ] Neus
