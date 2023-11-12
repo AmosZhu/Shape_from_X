@@ -67,6 +67,12 @@ class matajohDataset(Dataset):
     def __len__(self):
         return self.images.shape[0]
 
+    def random_select(self, num=1):
+        indices=torch.randperm(num)[:num]
+        for idx in indices:
+            (K, R, t), (image, mask) = self.__getitem__(idx)
+
+
     def get_all_data(self):
         K = torch.from_numpy(self.intrinsics)
 

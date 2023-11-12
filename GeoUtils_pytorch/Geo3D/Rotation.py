@@ -131,3 +131,28 @@ def R_difference(R1, R2):
     rad = torch.arccos((trace - 1) / 2)
 
     return rad2deg(rad)
+
+
+def R_diference_cos(R1, R2):
+    """
+    Compute the difference of cos(deg) between two rotation matrices.
+    Return: angles difference in degree
+    :param R1: Rotation matrix, size=[Batch, 3,3]
+    :param R2: Rotation matrix, size=[Batch, 3,3]
+    """
+    Rprod = torch.matmul(R1.transpose(1, 2), R2)
+    trace = torch.diagonal(Rprod, offset=0, dim1=-1, dim2=-2).sum(-1)
+    cosdeg = (trace - 1) / 2  # torch.clamp((trace - 1) / 2, min=-1 + 1e-10, max=1 - 1e-10)
+    return cosdeg
+
+
+def R_difference_deg(R1, R2):
+    """
+    Compute the difference angle between two rotation matrices.
+    Return: angles difference in degree
+    :param R1: Rotation matrix, size=[Batch, 3,3]
+    :param R2: Rotation matrix, size=[Batch, 3,3]
+    """
+
+    rad = torch.arccos(R_diference_cos(R1, R2))  # this might cause nan when in back projection
+    return rad2deg(rad)

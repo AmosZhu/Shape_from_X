@@ -31,6 +31,6 @@ if __name__ == '__main__':
     bFine = True if args.fine > 0 else False
 
     world_size = torch.cuda.device_count()
-    mp.spawn(train_nerf, nprocs=world_size, args=(world_size, epochs, learning_rate, save_epochs, batch_size, bFine, model_sel, object, output))
+    # mp.spawn(train_nerf, nprocs=world_size, args=(world_size, epochs, learning_rate, save_epochs, batch_size, bFine, model_sel, object, output))
 
-    # train_nerf(device=0, world_size=1, learning_rate=learning_rate, model_sel=model_sel, save_epochs=save_epochs, bFine=bFine, batch_size=batch_size, epochs=epochs, object=object, output_dir=output)
+    train_nerf(device=0, world_size=1, learning_rate=learning_rate, model_sel=model_sel, save_epochs=save_epochs, bFine=bFine, batch_size=batch_size, epochs=epochs, object=object, output_dir=output)

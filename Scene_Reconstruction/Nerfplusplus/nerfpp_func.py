@@ -1,10 +1,8 @@
 """
 Author: dizhong zhu
-Date: 08/04/2022
-
-A great explanation would be here:
-https://github.com/matajoh/fourier_feature_nets
+Date: 05/10/2022
 """
+
 import inspect
 import os
 import cv2
@@ -35,8 +33,8 @@ from pytorch3d.renderer import (
 )
 from torch.utils.data.distributed import DistributedSampler
 
-from model.NerfRaymarcher import NerfRaymarcher
-from model.NerfRaysampler import ProbabilisticRaysampler
+# from model.NerfRaymarcher import NerfRaymarcher
+from model.NerfppRaysampler import SphereMonteCarloRaysampler
 
 import numpy as np
 import torch
@@ -51,16 +49,6 @@ from GeoUtils_pytorch.Geo3D.Rotation import (
     rotx
 )
 from utils.plotly_helper import plotly_pointcloud_and_camera
-from pytorch3d.transforms.transform3d import _check_valid_rotation_matrix
-
-# from nerf_utils import (
-#     make_video,
-#     generate_rotating_nerf,
-#     generate_by_camera
-# )
-#
-# from utils.display_camera import plot_cameras
-import visdom
 
 mse2psnr = lambda x: -10. * np.log(x + 1e-10) / np.log(10.)
 
@@ -288,7 +276,7 @@ def train_nerf(device, world_size, epochs=100, learning_rate=1e-3, save_epochs=1
     # MonteCarlo ray sampler will take random rays from images, it will be using for training
     stratified = True
     n_rays_per_image = 512
-    raysampler_coarse = MonteCarloRaysampler(
+    raysampler_coarse = SphereMonteCarloRaysampler(
         min_x=-1.0,
         max_x=1.0,
         min_y=-1.0,
@@ -296,9 +284,10 @@ def train_nerf(device, world_size, epochs=100, learning_rate=1e-3, save_epochs=1
         n_rays_per_image=n_rays_per_image,
         n_pts_per_ray=128,
         min_depth=min_depth,
-        max_depth=max_depth,
         stratified_sampling=stratified
     )
+
+
     renderer_coarse = ImplicitRenderer(
         raysampler=raysampler_coarse, raymarcher=raymarcher,
     )

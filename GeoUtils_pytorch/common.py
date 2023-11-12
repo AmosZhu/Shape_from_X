@@ -76,3 +76,22 @@ def make_tensor_homogenous(x: torch.tensor):
     x_h = torch.cat([x, tail], dim=-2)
 
     return x_h
+
+
+def circle_shift(x: torch.tensor, shift=1):
+    '''
+    Shift the array in circle, notice the shift has sign. If it's positive then move to right, when negative then shift to left
+    i.e. if shift=1. Then y[0]=x[n],y[1]=x[0],y[2]=x[1], y[n]=x[n-1]
+    i.e. if shift=-1 Then y[0]=x[1],y[1]=x[2],y[n-1]=x[n], y[n]=x[0]
+    Parameters
+    ----------
+    x
+    shift
+
+    Returns
+    -------
+
+    '''
+    new_x = torch.cat([x[-shift:], x[:-shift]])
+
+    return new_x

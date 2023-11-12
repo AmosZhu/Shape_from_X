@@ -120,3 +120,30 @@ def plane_intersect_mesh(p_normal: torch.tensor, p_point: torch.tensor, F: torch
     path = torch.unique(path, dim=0)
 
     return path
+
+
+def ray_intersect_sphere(ray_o: torch.tensor, ray_d: torch.tensor, sphere_o: torch.tensor, sphere_r: torch.tensor):
+    '''
+    @param ray_o: the ray center.           size=[*spatial,3]
+    @param ray_d: the ray direction.        size=[*spatial,3]
+    @param sphere_o: the center of the sphere        size=[*spatial,3]
+    @param sphere_r: the radius of the sphere.        size=[*spatial]
+
+    @return: the intersection point, and the corresponding depth of the ray.
+    '''
+
+    A = (ray_d ** 2).sum(-1)
+    B = 2 * ((ray_o - sphere_o) * ray_d).sum(-1)
+    C = ((ray_o - sphere_o) ** 2).sum(-1) - sphere_r ** 2
+
+    disc = B ** 2 - 4 * A * C  # Only discriminant>=0, the ray might intersect with the sphere
+
+    mask = (disc >= 0)
+
+    t_1 = 0.5 * (-B + disc.sqrt()) / A
+    t_2 = 0.5 * (-B - disc.sqrt()) / A
+
+    mask_1 = (mask & (t_1 >= 0))
+    mask_2 = (mask & (t_2 >= 0))
+
+    return torch.stack([t_1, t_2], dim=-1), torch.stack([mask_1, mask_2], dim=-1)
